@@ -2,3 +2,6 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Ignore large data files
+DS-Project_data/*

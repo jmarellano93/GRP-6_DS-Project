@@ -1,7 +1,17 @@
+# R / RStudio
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
+*.Rout
+*.rds
 
-# Ignore large data files
+# Data (large files)
 DS-Project_data/
+
+# macOS
+.DS_Store
+
+# IDE/editor
+.vscode/
+*.swp

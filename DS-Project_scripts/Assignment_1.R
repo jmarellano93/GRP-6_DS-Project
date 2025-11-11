@@ -46,4 +46,10 @@ summary(data)
 na_counts <- colSums(is.na(data))
 na_counts[na_counts > 0]
 
+# Features which can be removed right away
+pre_select_feat_drop <- c("member_id", # already one identifier called id, id's do not have predictive power
+                          "url", # linking to the loan listing; provides no predictive power
+                          "zip_code" # too granular and often redundant with addr_state
+                          )
+
 

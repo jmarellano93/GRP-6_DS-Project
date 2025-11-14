@@ -10,6 +10,7 @@ original <- read.csv("DS-Project_data/LCdata.csv",
                  sep = ";",
                  header = TRUE)
 
+# Predefined columns to drop
 columns_to_drop <- c("collection_recovery_fee",
                      "installment",
                      "funded_amnt",
@@ -28,8 +29,99 @@ columns_to_drop <- c("collection_recovery_fee",
                      "total_rec_int",
                      "total_rec_late_fee",
                      "total_rec_prncp")
-data <- original[, -match(columns_to_drop,  names(original))]
+original_drop <- original[, -match(columns_to_drop,  names(original))]
 
+view(original_drop)
+
+# -----------------------------
+# Dtype dictionary
+# -----------------------------
+dtype_dict <- list(
+  acc_now_delinq = "integer",
+  addr_state = "factor",
+  all_util = "numeric",
+  annual_inc = "numeric",
+  annual_inc_joint = "numeric",
+  application_type = "factor",
+  collections_12_mths_ex_med = "integer",
+  delinq_2yrs = "integer",
+  desc = "factor",
+  dti = "numeric",
+  dti_joint = "numeric",
+  earliest_cr_line = "date",
+  emp_length = "factor",
+  emp_title = "factor",
+  home_ownership = "factor",
+  id = "integer",
+  il_util = "numeric",
+  initial_list_status = "factor",
+  inq_fi = "integer",
+  inq_last_12m = "integer",
+  inq_last_6mths = "integer",
+  int_rate = "numeric",
+  last_credit_pull_d = "date",
+  loan_amnt = "integer",
+  max_bal_bc = "numeric",
+  member_id = "integer",
+  mths_since_last_delinq = "integer",
+  mths_since_last_major_derog = "integer",
+  mths_since_last_record = "integer",
+  mths_since_rcnt_il = "integer",
+  open_acc = "integer",
+  open_acc_6m = "integer",
+  open_il_12m = "integer",
+  open_il_24m = "integer",
+  open_il_6m = "integer",
+  open_rv_12m = "integer",
+  open_rv_24m = "integer",
+  policy_code = "factor",
+  pub_rec = "integer",
+  purpose = "factor",
+  revol_bal = "integer",
+  revol_util = "numeric",
+  term = "factor",
+  title = "factor",
+  tot_coll_amt = "numeric",
+  tot_cur_bal = "numeric",
+  total_acc = "integer",
+  total_bal_il = "numeric",
+  total_cu_tl = "integer",
+  total_rev_hi_lim = "numeric",
+  url = "factor",
+  zip_code = "factor"
+)
+
+# -----------------------------
+# Function to convert columns
+# -----------------------------
+for(col_name in names(dtype_dict)) {
+  dtype <- dtype_dict[[col_name]]
+  if(dtype == "factor") {
+    original_drop[[col_name]] <- as.factor(original_drop[[col_name]])
+  } else if(dtype == "integer") {
+    original_drop[[col_name]] <- as.integer(original_drop[[col_name]])
+  } else if(dtype == "numeric") {
+    original_drop[[col_name]] <- as.numeric(original_drop[[col_name]])
+  } else if(dtype == "date") {
+    original_drop[[col_name]] <- as.Date(original_drop[[col_name]], format="%b-%Y")
+  }
+}
+
+# -----------------------------
+# Quick check
+# -----------------------------
+str(original_drop)
+
+# -----------------------------
+# Make Copy to work with
+# -----------------------------
+
+data <- original_drop
+
+
+# -----------------------------
+# Basic Exploration
+# -----------------------------
 dim(data) # The shape is 798641:54
 
 # Display the structure of the dataset
@@ -42,6 +134,13 @@ head(data)
 # Display summary statistics of the dataset
 summary(data)
 
+# Search for duplicated rows
+dup_ids <- data[duplicated(data$id), ]
+dup_ids # There are no duplicated rows
+
+# -----------------------------
+# Identify NA and Missingness
+# -----------------------------
 # Which columns has NA
 na_counts <- colSums(is.na(data))
 na_counts[na_counts > 0]
@@ -152,3 +251,31 @@ cat("\nTotal rows in dataset:", total_rows, "\n")
 feat_to_drop <- c(feat_to_drop, il_cols)
 
 # ===============================================================
+
+na_df <- data.frame(
+  column = names(data),
+  na_percent = round(colMeans(is.na(data)) * 100,2)
+)
+print(na_df)
+
+# ===============================================================
+# Distribution
+# ===============================================================
+
+# Identify columns with > 90% NA and drop it
+cols_to_remove <- na_df$column[na_df$na_percent > 90]
+cols_to_remove
+
+data_filtered <- data[ , !names(data) %in% cols_to_remove]
+
+# Ensure Dtypes are correct
+# Make Histograms / Density plot (numeric)
+# Make barplots (categorical)
+# Make Boxplots
+# Identify outliers
+# Identify imputed values / wrong values
+# Bivariate exploration: Scatterplots: numeric vs numeric | Boxplots: numeric vs categorical | Contingency tables: categorical vs categorical | Correlation matrix (very helpful)
+
+view(data_filtered)
+
+

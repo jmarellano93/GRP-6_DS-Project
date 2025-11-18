@@ -8,6 +8,7 @@
 
 # Data (large files)
 DS-Project_data/
+Full_dataset/
 
 # macOS
 .DS_Store

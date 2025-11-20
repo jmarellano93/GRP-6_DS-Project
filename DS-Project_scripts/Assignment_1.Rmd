@@ -179,6 +179,7 @@ pre_select_feat_drop <- c("member_id", # already one identifier called id, id's 
 feat_to_drop <- c(pre_select_feat_drop)
 
 ```{r}
+
 # ===============================================================
 # Inspect missingness in installment loan-related features
 # ===============================================================
@@ -557,13 +558,218 @@ data_filtered <- data_filtered %>%
                               1, 
                               delinq_2yrs))
 ```
+
+```{r}
+# Search for mths_since_last_delinq > 24 and acc_now_delinq > 0
+suspicious_acc_now_delinq_rows <- data_filtered %>%
+  filter(mths_since_last_delinq > 24 & acc_now_delinq > 0)
+print(suspicious_acc_now_delinq_rows)
+
+
+# Search for delinq_2yrs == 0 and acc_now_delinq > 0
+suspicious_acc_now_delinq_rows_2 <- data_filtered %>%
+  filter(delinq_2yrs == 0 & acc_now_delinq > 0)
+print(suspicious_acc_now_delinq_rows_2)
+```
+
+
 ```{r}
 # Check distributions again
 plot_numeric_distributions(data = data_filtered, target_variable = "int_rate")
 ```
+Possibly change delinq_2yrs into a factor for regression models
 
 
-# Check for minus values
+
+# Inq_last_6mths
+```{r}
+# Show highest and lowest values of inq_last_6mths
+data_filtered %>%
+  arrange(inq_last_6mths) %>%
+  select(loan_amnt, inq_last_6mths, int_rate, term
+) %>%
+  head(20)
+data_filtered %>%
+  arrange(desc(inq_last_6mths)) %>%
+  select(loan_amnt, inq_last_6mths, int_rate, term
+) %>%
+  head(20)
+```
+The distribution of the data looks okay, no negative values and no extremes
+
+# Mths since last record and pub_record
+If months > 0 then pub_record has to be >= 1
+If months = 0 then pub_record has to be >= 1 (one if it is in the same month)
+If there is an NA value in months then the customer never had a public record, so pub_record has to be 0
+
+```{r}
+# Search for rows with months > 0 and pub_record = 0 or NA
+suspicious_pub_record_rows <- data_filtered %>%
+  filter((mths_since_last_record > 0 & (is.na(pub_rec) | pub_rec == 0)
+  ))
+print(suspicious_pub_record_rows) # 0 rows found
+
+
+# Search for rows with months = 0 and pub_record = NA
+suspicious_pub_record_rows_2 <- data_filtered %>%
+  filter((mths_since_last_record == 0 & is.na(pub_rec)
+  ))
+print(suspicious_pub_record_rows_2) # 0 rows found
+
+
+# Search for rows with months = 0 and pub_record > 0
+suspicious_pub_record_rows_3 <- data_filtered %>%
+  filter((mths_since_last_record == 0 & pub_rec == 0
+  ))
+print(suspicious_pub_record_rows_3) # 8 rows found.    -- for pub_rec == 0 we have 1'136 hits. Question our logic, since this would mean that 1'136 rows are wrong and should be changed to NA to be imputed later (or dropped entirely)
+
+# Check logic, search how many rows mths_since_last_record = 0 and pub_record >= 1 (should have many hits)
+suspicious_pub_record_rows_4 <- data_filtered %>%
+  filter((mths_since_last_record == 0 & pub_rec >= 1
+  ))
+print(suspicious_pub_record_rows_4) # 8 hits
+
+# Search for rows where mths_since_last_record is NA, pub_record has to be here NA or 0, so find all which are > 0
+suspicious_pub_record_rows_5 <- data_filtered %>%
+  filter(is.na(mths_since_last_record) & pub_rec > 0
+  )
+print(suspicious_pub_record_rows_5) # 0 rows found
+
+
+
+```
+Drop rows where both mths_since_last_record and pub_rec are NA --> you can't be sure if it is missing, or if the customer never had a public record
+For those in mths_since_last record NA and pub_rec == 0 we keep it as is --> change to factorial and level 'none' later
+Impute all NA of pub_record where mths_since_last_record != NA
+
+# Check distribution of values of mths_since_last_record and pub_record to find strange values
+```{r}
+# lowest values of mths_since_last_record
+data_filtered %>%
+  arrange(mths_since_last_record) %>%
+  select(loan_amnt, mths_since_last_record, pub_rec, int_rate, term) %>%
+  head(20)
+# highest values of mths_since_last_record
+data_filtered %>%
+  arrange(desc(mths_since_last_record)) %>%
+  select(loan_amnt, mths_since_last_record, pub_rec, int_rate, term) %>%
+  head(20)
+# lowest values of pub_rec
+data_filtered %>% 
+  arrange(pub_rec) %>%
+  select(loan_amnt, mths_since_last_record, pub_rec, int_rate, term) %>%
+  head(20)
+# highest values of pub_rec
+data_filtered %>% 
+  arrange(desc(pub_rec)) %>%
+  select(loan_amnt, mths_since_last_record, pub_rec, int_rate, term) %>%
+  head(20)
+
+```
+
+
+# open_acc
+open_acc must be less or equal to total_acc (total_acc is the count of all accounts ever openend). Check for rows where open_acc > total_acc
+```{r}
+# Search for rows with open_acc > total_acc
+suspicious_open_acc_rows <- data_filtered %>%
+  filter(open_acc > total_acc)
+print(suspicious_open_acc_rows) # 2 rows found
+```
+You should not change total_acc to the value of open_acc. Changing the total_acc value risks fabricating historical data that might be wrong.
+The issue is that open_acc is impossible given the total_acc count. Therefore, the open_acc value is the one that should be corrected.
+Recommended Correction: Convert open_acc to NA
+For only 2 rows, the safest and most robust action is to set open_acc to NA and let your general imputation strategy handle the final value.
+
+# Check NA of open_acc
+```{r}
+na_open_acc_count <- sum(is.na(data_filtered$open_acc))
+print(paste("Number of NA in open_acc:", na_open_acc_count))
+```
+
+# Check NA of total_acc
+```{r}
+na_total_acc_count <- sum(is.na(data_filtered$total_acc))
+print(paste("Number of NA in total_acc:", na_total_acc_count))
+```
+
+# Number of accounts where open_acc AND total_acc are both NA
+```{r}
+na_both_count <- sum(is.na(data_filtered$open_acc) & is.na(data_filtered$total_acc))
+print(paste("Number of rows with both open_acc and total_acc as NA:", na_both_count))
+```
+It is best to dropthese 25 rows --> not a lot in the entire dataset and since the correlation of one to the other is missing, it is hard to impute them logically
+
+# Find lowest and highest values of open_acc and total_acc
+```{r}
+# lowest values of open_acc
+data_filtered %>%
+  arrange(open_acc) %>%
+  select(loan_amnt, open_acc, total_acc, int_rate, term) %>%
+  head(20)
+# highest values of open_acc
+data_filtered %>%
+  arrange(desc(open_acc)) %>%
+  select(loan_amnt, open_acc, total_acc, int_rate, term) %>%
+  head(20)
+# lowest values of total_acc
+data_filtered %>% 
+  arrange(total_acc) %>%
+  select(loan_amnt, open_acc, total_acc, int_rate, term) %>%
+  head(20)
+# highest values of total_acc
+data_filtered %>% 
+  arrange(desc(total_acc)) %>%
+  select(loan_amnt, open_acc, total_acc, int_rate, term) %>%
+  head(20)
+```
+
+
+Interpretation of open_acc and total_acc
+A high total_acc indicates a long credit history, while a high open_acc indicates the borrower is managing a high number of active lines of credit, which can be a higher risk signal.
+
+# Revol_bal
+This is the revolving balance. there are a few other features to look at to check data integrity
+total_rev_hi_lim (the maximum available credit) should logically always be bigger or equal to revol_bal: check for rows where revol_bal > total_rev_hi_lim
+revol_util is a ratio calculated by revol_bal/total_rev_hi_lim (potentially * 100). Check for rows where revol_util * total_rev_hi_lim < revol_bal (if revol_util is in percentage, then revol_util/100 * total_rev_hi_lim < revol_bal)
+If there is a balance, then an account has to be open. Therefore if revol_balf > 0 then open_acc has to be > 0 (subsequently total_acc has to be > 0 as well)
+
+```{r}
+# Search for rows with revol_bal > total_rev_hi_lim
+suspicious_revol_bal_rows <- data_filtered %>%
+  filter(revol_bal > total_rev_hi_lim)
+print(suspicious_revol_bal_rows) # 3'269 rows found
+
+# Search for rows with revol_util * total_rev_hi_lim < revol_bal
+suspicious_revol_util_rows <- data_filtered %>%
+  filter(revol_util / 100 * total_rev_hi_lim < revol_bal)
+print(suspicious_revol_util_rows) # 367'136 rows found
+
+# Search for rows with revol_bal > 0 and open_acc == 0
+suspicious_revol_bal_open_acc_rows <- data_filtered %>%
+  filter(revol_bal > 0 & open_acc == 0)
+print(suspicious_revol_bal_open_acc_rows) # 0 rows found
+```
+
+For case one: 
+total_rev_hi_lim represents the absolute, legally defined maximum amount of credit a borrower has available across all their revolving accounts. This value can only increase if a lender officially raises the limit, or if a new line of credit is opened.
+Logical Impossibility: The revol_bal (Revolving Balance) is the amount owed. If the amount owed exceeds the total available limit, the revol_bal figure must be wrong because it violates the hard ceiling of the credit system. Even if the limit was slightly delayed in updating, 
+balance exceeding the limit by a large amount points to a data corruption error in the balance, not the limit.
+
+The safest action is to set the faulty revol_bal to NA and let your imputation strategy handle it later.
+
+
+For case two:
+For the 367,136 rows, the discrepancy is so pervasive that cleaning every one is difficult. The most powerful variable among the three is the Utilization Rate (revol_util), as it is the metric lenders focus on for risk.
+
+The best approach is to re-calculate revol_util based on the cleaned revol_bal and total_rev_hi_lim columns.
+
+
+
+
+
+
+# Check for minus values and fillers like 999 
 # Ensure Dtypes are correct
 # Make Histograms / Density plot (numeric)
 # Make barplots (categorical)
@@ -572,6 +778,8 @@ plot_numeric_distributions(data = data_filtered, target_variable = "int_rate")
 # Identify imputed values / wrong values
 # Bivariate exploration: Scatterplots: numeric vs numeric | Boxplots: numeric vs categorical | Contingency tables: categorical vs categorical | Correlation matrix (very helpful)
 
+
+# Change variables like pub_rec to factorial in linear regression, the risk and so change in int_rate is more likely to change from pub_rec == 0 or 1, and less risk change from e.g. 45 -> 50
 view(data_filtered)
 
 

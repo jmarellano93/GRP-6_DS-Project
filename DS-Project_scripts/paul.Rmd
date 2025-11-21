@@ -1,0 +1,25 @@
+# Data Preprocessing
+
+```{r}
+print("Hello")
+```
+
+## Data Understanding
+
+### Dimensions
+
+### Numerical and Categorical Data
+
+## Data Wrangling
+
+### Missing, Duplicate and Wrong Values
+
+### Imputation
+
+## Data Analysis
+
+### Feature Selection
+
+### Statistical Analysis
+
+### Model Selection/Engineering

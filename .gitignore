@@ -5,14 +5,12 @@
 .Ruserdata
 *.Rout
 *.rds
-
 # Data (large files)
 DS-Project_data/
 Full_dataset/
-
 # macOS
 .DS_Store
-
 # IDE/editor
 .vscode/
 *.swp
+.RDataTmp

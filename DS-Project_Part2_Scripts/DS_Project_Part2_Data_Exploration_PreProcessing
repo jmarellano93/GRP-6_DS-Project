@@ -1,0 +1,512 @@
+# ==============================================================================
+# SCRIPT: Credit Risk Data Exploration & Preprocessing (Part 2)
+# PURPOSE: To audit, clean, and transform raw credit data into a Neural Network-ready format.
+# ==============================================================================
+
+# ==============================================================================
+# Module 1: Environment Setup
+# ==============================================================================
+
+# --- Package Installation Logic ---
+installed_pkgs <- installed.packages()[, "Package"]
+req_pkgs <- c("tidyverse", "caret", "reshape2", "corrplot", "vcd", "naniar", "scorecard", "e1071")
+new_pkgs <- req_pkgs[!(req_pkgs %in% installed_pkgs)]
+if(length(new_pkgs)) install.packages(new_pkgs)
+
+# --- Load Libraries ---
+library(tidyverse)  # Data manipulation
+library(caret)      # ML Preprocessing
+library(reshape2)   # Reshaping
+library(corrplot)   # Correlation Viz
+library(vcd)        # Categorical Statistics
+library(naniar)     # Missing Data
+library(scorecard)  # Credit Risk tools
+library(e1071)      # Skewness checks
+
+set.seed(123)
+
+# --- Data Loading Function ---
+load_data <- function(path) {
+  if(!file.exists(path)) stop("File not found!")
+  
+  df <- read.csv(path, stringsAsFactors = FALSE)
+  
+  print("------------------------------------------------------")
+  print(paste("SUCCESS: Data loaded from", path))
+  print(paste("Initial Dimensions:", nrow(df), "Rows,", ncol(df), "Columns"))
+  print("------------------------------------------------------")
+  
+  return(df)
+}
+
+# ==============================================================================
+# Module 2: Initial Data Exploration (Enhanced based on Audit)
+# ==============================================================================
+
+perform_initial_eda <- function(df) {
+  
+  cat("\n################################################################\n")
+  cat("    PHASE 1: DATA STRUCTURE & QUALITY AUDIT\n")
+  cat("################################################################\n")
+  
+  # --- 1.1 Dimensionality Check ---
+  cat("\n[1.1] Dimensionality Check:\n")
+  cat("Observations (Rows):", nrow(df), "\n")
+  cat("Features (Columns):", ncol(df), "\n")
+  
+  # --- 1.2 Variable Taxonomy ---
+  cat("\n[1.2] Variable Data Types:\n")
+  print(table(sapply(df, class)))
+  
+  # --- 1.3 Missing Value Audit ---
+  cat("\n[1.3] Missing Value Audit:\n")
+  miss_counts <- colSums(is.na(df))
+  miss_pct <- miss_counts / nrow(df) * 100
+  
+  if(length(miss_pct[miss_pct > 0]) > 0) {
+    print(miss_pct[miss_pct > 0])
+    
+    # PLOT 1: Missing Data
+    cat("\n[PLOT] Generating Missing Data Map...\n")
+    print(naniar::gg_miss_var(df, show_pct = TRUE) + 
+            labs(title = "Missing Data by Variable (%)"))
+    
+  } else {
+    print("No missing values detected.")
+  }
+  
+  # --- 1.4 Duplication Check ---
+  cat("\n[1.4] Duplication Audit:\n")
+  dup_rows <- sum(duplicated(df))
+  cat("Exact Duplicate Rows:", dup_rows, "(", round(dup_rows/nrow(df)*100, 2), "%)\n")
+  
+  if("ID" %in% colnames(df)) {
+    dup_ids <- sum(duplicated(df$ID))
+    cat("Duplicate IDs:", dup_ids, "\n")
+  }
+  
+  # --- 1.5 Anomaly & Sentinel Value Detection ---
+  cat("\n[1.5] Sentinel Value Search (Magic Numbers):\n")
+  num_cols <- df %>% select(where(is.numeric))
+  sentinels <- c(-1, 999, 365243)
+  for(val in sentinels) {
+    count <- sum(num_cols == val, na.rm = TRUE)
+    if(count > 0) cat("Value", val, "found", count, "times. Potential placeholder.\n")
+  }
+  
+  # --- 1.6 Zero Variance Check ---
+  cat("\n[1.6] Zero Variance / Constant Feature Check:\n")
+  zv_cols <- nearZeroVar(df, saveMetrics = TRUE)
+  if(any(zv_cols$zeroVar)) {
+    cat("CRITICAL: The following variables have Zero Variance (Single unique value):\n")
+    print(rownames(zv_cols[zv_cols$zeroVar == TRUE, ]))
+  } else {
+    cat("No Zero Variance variables detected.\n")
+  }
+
+  
+  cat("\n################################################################\n")
+  cat("    PHASE 2: UNIVARIATE ANALYSIS\n")
+  cat("################################################################\n")
+  
+  # --- 2.1 Numerical Distribution & Skewness Audit ---
+  num_vars <- names(num_cols)
+  
+  for(var in num_vars) {
+    if(var == "ID") next 
+    
+    cat(paste("\nSummary for:", var, "\n"))
+    print(summary(df[[var]]))
+    
+    # Skewness Calculation
+    skew_val <- skewness(df[[var]], na.rm = TRUE)
+    cat("Skewness:", round(skew_val, 4))
+    
+    if(!is.na(skew_val) && abs(skew_val) > 1) {
+      cat(" -> HIGHLY SKEWED (Consider Log Transform)\n") 
+    } else if (is.na(skew_val)) {
+      cat(" -> Undefined (Likely Zero Variance)\n")
+    } else {
+      cat("\n")
+    }
+    
+    # PLOT 2 & 3: Histogram and Boxplot Loop
+    # SAFETY CHECK: Plot only if variance > 0
+    if (sd(df[[var]], na.rm=TRUE) > 0) {
+      cat(paste("[PLOT] Generating Distribution & Boxplot for:", var, "...\n"))
+      
+      p1 <- ggplot(df, aes_string(x = var)) +
+        geom_histogram(fill="steelblue", color="white", bins=30, alpha=0.7) +
+        labs(title = paste("Distribution of", var)) + theme_minimal()
+      
+      p2 <- ggplot(df, aes_string(y = var)) +
+        geom_boxplot(fill="orange", alpha=0.5) +
+        labs(title = paste("Outliers in", var)) + theme_minimal()
+      
+      print(p1)
+      print(p2)
+    }
+  }
+  
+  # --- 2.2 Categorical Frequency ---
+  cat("\n[2.2] Categorical Frequency Analysis:\n")
+  cat_cols <- df %>% select(where(is.character), where(is.factor))
+  
+  for(col in names(cat_cols)) {
+    unique_count <- length(unique(df[[col]]))
+    cat(paste("\nVariable:", col, "| Unique Levels:", unique_count, "\n"))
+    
+    if(unique_count < 50) {
+      # PLOT 4: Categorical Bars
+      cat(paste("[PLOT] Generating Frequency Bar Chart for:", col, "...\n"))
+      
+      print(ggplot(df, aes_string(x = col)) +
+              geom_bar(fill = "darkgreen", alpha = 0.7) +
+              coord_flip() +
+              labs(title = paste("Frequency of", col)) + theme_minimal())
+    } else {
+      cat("Cardinality too high for plot. Showing top 10 levels:\n")
+      print(head(sort(table(df[[col]]), decreasing = TRUE), 10))
+    }
+  }
+  
+  
+  cat("\n################################################################\n")
+  cat("    PHASE 3: MULTIVARIATE & BIVARIATE ANALYSIS\n")
+  cat("################################################################\n")
+  
+  # --- 3.1 Target Variable Distribution ---
+  if("status" %in% colnames(df)) {
+    cat("\n[3.1] Raw Target (Status) Distribution:\n")
+    print(prop.table(table(df$status)) * 100)
+  }
+  
+  # --- 3.2 Correlation Matrix (Numerical) ---
+  cat("\n[3.2] Correlation Matrix:\n")
+  if(ncol(num_cols) > 1) {
+    clean_num <- num_cols %>% select(-matches("ID"))
+    clean_num <- clean_num[, sapply(clean_num, function(x) sd(x, na.rm=TRUE) > 0)]
+    
+    if(ncol(clean_num) > 1) {
+      # PLOT 5: Correlation Matrix
+      cat("[PLOT] Generating Numerical Correlation Matrix...\n")
+      cor_mat <- cor(clean_num, use = "complete.obs")
+      corrplot(cor_mat, method="circle", type="lower", title="Numerical Correlation", mar=c(0,0,2,0))
+    }
+  }
+  
+  # --- 3.3 Group Comparison ---
+  if("status" %in% colnames(df)) {
+    cat("\n[3.3] Numeric Distributions by Status:\n")
+    for(var in names(num_cols)) {
+      if(var == "ID") next
+      if(sd(df[[var]], na.rm=TRUE) > 0) {
+        # PLOT 6: Boxplots by Status
+        cat(paste("[PLOT] Generating Boxplot by Status for:", var, "...\n"))
+        print(ggplot(df, aes_string(x="status", y=var, fill="status")) +
+                geom_boxplot() +
+                labs(title = paste(var, "by Status")))
+      }
+    }
+  }
+
+  cat("\n################################################################\n")
+  cat("    PHASE 4: MODEL-SPECIFIC PRE-AUDIT\n")
+  cat("################################################################\n")
+
+  # --- 4.1 Information Value (Feature Relevance) ---
+  if("status" %in% colnames(df)) {
+    cat("\n[4.1] Information Value (IV) Analysis:\n")
+    temp_df <- df %>%
+      mutate(target_bin = ifelse(status %in% c('2','3','4','5'), 1, 0))
+    
+    iv_vals <- iv(temp_df, y = 'target_bin') 
+    print(iv_vals %>% filter(info_value > 0.02) %>% arrange(desc(info_value)))
+    
+    suspicious <- iv_vals %>% filter(info_value > 0.8)
+    if(nrow(suspicious) > 0) {
+      cat("WARNING: Variables with suspiciously high IV (>0.8) detected.\n")
+    }
+  }
+  
+  cat("\n--- Initial EDA Complete ---\n")
+}
+
+# ==============================================================================
+# Module 3: Data Preprocessing Core (Refined based on Audit)
+# ==============================================================================
+
+process_credit_data <- function(df) {
+  
+  cat("\n[Module 3] Starting Data Preprocessing & Feature Engineering...\n")
+  
+  df_clean <- df %>%
+    mutate(
+      # --- 1. Anomaly Remediation ---
+      IS_RETIRED = ifelse(DAYS_EMPLOYED == 365243, 1, 0),
+      DAYS_EMPLOYED = ifelse(DAYS_EMPLOYED == 365243, 0, DAYS_EMPLOYED),
+      
+      # --- 2. Feature Engineering: Time Conversion ---
+      AGE = floor(abs(DAYS_BIRTH) / 365.25),
+      YEARS_EMPLOYED = floor(abs(DAYS_EMPLOYED) / 365.25)
+    ) %>%
+    select(-DAYS_BIRTH, -DAYS_EMPLOYED)
+  
+  # --- 3. [NEW] Audit Report Rec: Advanced Feature Engineering ---
+  df_clean <- df_clean %>%
+    mutate(
+      # 3a. Income Per Family Member
+      INCOME_PER_MEMBER = AMT_INCOME_TOTAL / CNT_FAM_MEMBERS,
+      
+      # 3b. Dependency Ratio
+      CNT_ADULTS = pmax(CNT_FAM_MEMBERS - CNT_CHILDREN, 1),
+      DEPENDENCY_RATIO = CNT_CHILDREN / CNT_ADULTS
+    )
+  
+  # --- 4. [NEW] Audit Report Rec: Skewness Remediation ---
+  df_clean <- df_clean %>%
+    mutate(
+      AMT_INCOME_TOTAL_LOG = log1p(AMT_INCOME_TOTAL)
+    ) %>%
+    select(-AMT_INCOME_TOTAL)
+  
+  # --- 5. Conditional Imputation ---
+  df_clean$OCCUPATION_TYPE <- NA
+  df_clean <- df_clean %>%
+    mutate(
+      OCCUPATION_TYPE = case_when(
+        NAME_INCOME_TYPE == "Pensioner" & is.na(OCCUPATION_TYPE) ~ "Retired",
+        is.na(OCCUPATION_TYPE) ~ "Unknown", 
+        TRUE ~ OCCUPATION_TYPE
+      )
+    )
+  
+  # --- 6. Target Definition ---
+  bad_status <- c('2', '3', '4', '5')
+  
+  df_clean <- df_clean %>%
+    mutate(
+      TARGET = ifelse(status %in% bad_status, 1, 0)
+    ) %>%
+    select(-status) 
+  
+  # --- 7. [NEW] Audit Report Rec: Remove Zero Variance ---
+  # FIX: We must PROTECT the TARGET variable. 
+  # If class imbalance is high (e.g. 98% vs 2%), nearZeroVar might try to drop TARGET.
+  nzv_indices <- nearZeroVar(df_clean, freqCut = 95/5)
+  
+  if(length(nzv_indices) > 0) {
+    vars_to_remove <- names(df_clean)[nzv_indices]
+    
+    # CRITICAL FIX: Exclude TARGET from removal list
+    vars_to_remove <- setdiff(vars_to_remove, "TARGET")
+    
+    if(length(vars_to_remove) > 0) {
+      cat("Dropping Zero/Near-Zero Variance Columns:", vars_to_remove, "\n")
+      df_clean <- df_clean %>% select(-all_of(vars_to_remove))
+    }
+  }
+    
+  # Convert characters to factors
+  df_clean[sapply(df_clean, is.character)] <- lapply(df_clean[sapply(df_clean, is.character)], as.factor)
+  
+  print("------------------------------------------------------")
+  print("SUCCESS: Data Preprocessing & Feature Engineering Complete")
+  print(paste("Cleaned Data Dimensions:", nrow(df_clean), "Rows,", ncol(df_clean), "Columns"))
+  print("Target Class Distribution in Cleaned Data:")
+  print(table(df_clean$TARGET))
+  print("------------------------------------------------------")
+  
+  return(df_clean)
+}
+
+# ==============================================================================
+# Module 4: Secondary Data Exploration
+# ==============================================================================
+
+perform_eda <- function(df) {
+  
+  # --- 1. Target Distribution ---
+  cat("\n--- Target Class Distribution ---\n")
+  if(!"TARGET" %in% names(df)) stop("CRITICAL ERROR: TARGET variable missing from dataframe!")
+  
+  print(prop.table(table(df$TARGET)))
+
+  # PLOT 7: Target Distribution
+  cat("[PLOT] Generating Target Class Distribution Bar Chart...\n")
+  g1 <- ggplot(df, aes(x = as.factor(TARGET), fill = as.factor(TARGET))) +
+    geom_bar() +
+    labs(title = "Target Distribution (0=Good, 1=Bad)", x = "Class", y = "Count") +
+    theme_minimal() +
+    scale_fill_manual(values = c("steelblue", "firebrick"))
+  print(g1)
+  
+  # --- 2. Distributions of Engineered Features ---
+  cat("\n--- Checking Distributions of Engineered Features ---\n")
+  numeric_vars <- df %>% select(where(is.numeric))
+  
+  for(var in names(numeric_vars)) {
+    if(var == "TARGET") next
+    
+    if(sd(df[[var]], na.rm=TRUE) > 0) {
+      # PLOT 8: Engineered Feature Distributions
+      cat(paste("[PLOT] Generating Distribution for Engineered Feature:", var, "...\n"))
+      
+      print(ggplot(df, aes_string(x = var)) +
+              geom_histogram(fill = "cornflowerblue", color = "white", bins = 30, alpha = 0.8) +
+              labs(title = paste("Post-Cleaning Distribution:", var),
+                   subtitle = "Check for Normality / Skewness") +
+              theme_minimal())
+    }
+  }
+  
+  # --- 3. Boxplots vs Status ---
+  cat("\n--- Feature Separation by Target ---\n")
+  for(var in names(numeric_vars)) {
+    if(var == "TARGET") next
+    
+    if(sd(df[[var]], na.rm=TRUE) > 0) {
+      # PLOT 9: Engineered Feature vs Target
+      cat(paste("[PLOT] Generating Boxplot (Target Separation) for:", var, "...\n"))
+      
+      print(ggplot(df, aes_string(x = "as.factor(TARGET)", y = var, fill = "as.factor(TARGET)")) +
+              geom_boxplot(alpha = 0.6) +
+              labs(title = paste(var, "vs Credit Risk"), x = "Target", y = var) +
+              scale_fill_manual(values = c("steelblue", "firebrick")) +
+              theme_minimal())
+    }
+  }
+
+  # --- 4. Interactions ---
+  if("AMT_INCOME_TOTAL_LOG" %in% names(df)) {
+    # PLOT 10: Interaction Scatter Plot
+    cat("[PLOT] Generating Interaction Scatter Plot (Age vs Income)...\n")
+    
+    print(ggplot(df, aes(x = AGE, y = AMT_INCOME_TOTAL_LOG, color = as.factor(TARGET))) +
+            geom_point(alpha = 0.5) +
+            labs(title = "Age vs Log(Income) by Risk Status") +
+            scale_color_manual(values = c("steelblue", "firebrick")) +
+            theme_minimal())
+  }
+  
+  # --- 5. Numerical Correlation ---
+  numeric_vars_clean <- numeric_vars[, sapply(numeric_vars, function(x) sd(x, na.rm=TRUE) > 0)]
+  
+  if(ncol(numeric_vars_clean) > 1) {
+    # PLOT 11: Final Correlation Matrix
+    cat("[PLOT] Generating Final Numerical Correlation Matrix...\n")
+    cor_matrix <- cor(numeric_vars_clean, use = "complete.obs")
+    corrplot(cor_matrix, method = "color", type = "upper", 
+             tl.cex = 0.7, title = "Numerical Correlation Matrix", mar=c(0,0,1,0))
+  }
+  
+  # --- 6. Categorical Association (Cramer's V) ---
+  cat_vars <- df %>% select(where(is.factor))
+  if(ncol(cat_vars) > 1) {
+    # PLOT 12: Cramer's V Matrix
+    cat("[PLOT] Generating Categorical Association Matrix (Cramer's V)...\n")
+    
+    calc_cramers_v <- function(cat_data) {
+      cat_cols <- colnames(cat_data)
+      n <- length(cat_cols)
+      cramers_matrix <- matrix(1, nrow=n, ncol=n, dimnames=list(cat_cols, cat_cols))
+      for(i in 1:(n-1)) {
+        for(j in (i+1):n) {
+          tbl <- table(cat_data[[i]], cat_data[[j]])
+          v_stat <- assocstats(tbl)$cramer
+          cramers_matrix[i,j] <- v_stat
+          cramers_matrix[j,i] <- v_stat
+        }
+      }
+      return(cramers_matrix)
+    }
+    cramer_mat <- calc_cramers_v(cat_vars)
+    corrplot(cramer_mat, method = "color", title = "Categorical Cramer's V Matrix", mar=c(0,0,1,0))
+  }
+}
+
+# ==============================================================================
+# Module 5: Final Preprocessing for Neural Networks (OPTIMIZED)
+# ==============================================================================
+
+prepare_nn_matrices <- function(df) {
+  
+  cat("\n################################################################\n")
+  cat("    PHASE 5: MATRIX COMPILATION\n")
+  cat("################################################################\n")
+  
+  # --- 1. Feature Selection (Collinearity Removal) ---
+  # Removing CNT_CHILDREN as it is highly collinear (>0.8) with CNT_FAM_MEMBERS
+  # Removing ID as it is not predictive
+  df_features <- df %>% select(-TARGET, -ID, -CNT_CHILDREN) 
+  
+  target_vec <- df$TARGET
+  
+  # --- 2. Integer/Label Encoding (Replacing One-Hot) ---
+  # Neural Networks often prefer dense representations (Integer encoding)
+  # over sparse One-Hot vectors, especially if using Embedding Layers later.
+  # This avoids the "Curse of Dimensionality".
+  
+  cat("Encoding Categorical Variables as Integers...\n")
+  
+  # Convert all factors to numeric indices (1, 2, 3...)
+  # We subtract 1 to make them 0-indexed (Python/TensorFlow preference, though R is 1-based)
+  # but for standard normalization, simple numeric conversion is fine.
+  cat_cols <- names(df_features)[sapply(df_features, is.factor)]
+  
+  for(col in cat_cols){
+    df_features[[col]] <- as.numeric(df_features[[col]])
+  }
+  
+  # --- 3. Min-Max Scaling ---
+  # Neural Networks require inputs between 0 and 1 to prevent gradient explosion
+  cat("Applying Min-Max Scaling...\n")
+  scaler_model <- preProcess(df_features, method = c("range"))
+  df_scaled <- predict(scaler_model, df_features)
+  
+  # --- 4. Matrix Conversion ---
+  # Final conversion to matrix format
+  x_matrix <- data.matrix(df_scaled)
+  y_matrix <- data.matrix(target_vec)
+  
+  # Output Summary
+  cat("\n--- Preprocessing Summary ---\n")
+  cat("Processing Logic: Label Encoding + MinMax Scaling\n")
+  cat("Dropped Features: ID, CNT_CHILDREN (Collinearity)\n")
+  cat("Final Feature Matrix Shape:", dim(x_matrix), "\n")
+  cat("Final Target Vector Shape:", length(y_matrix), "\n")
+  
+  return(list(X = x_matrix, Y = y_matrix, scaler = scaler_model))
+}
+
+# ==============================================================================
+# Module 6: Main Execution
+# ==============================================================================
+
+# 1. Load
+# Update path to your local file location
+raw_data <- load_data("C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_data/Dataset-part-2.csv")
+
+# 2. INITIAL EXPLORATION
+# This runs on the raw data to spot issues before cleaning
+perform_initial_eda(raw_data)
+
+# 3. Clean & Construct
+# (Now we clean the data based on what we learned in step 2)
+clean_data <- process_credit_data(raw_data)
+
+# 4. Analyze (Secondary EDA)
+# (This analyzes the Cleaned/Feature Engineered data)
+perform_eda(clean_data)
+
+# 5. Prepare for Model (Optimized for NN)
+# Generates dense matrices without SMOTE or OHE
+nn_ready_data <- prepare_nn_matrices(clean_data)
+
+# Access matrices for training
+X_train <- nn_ready_data$X
+Y_train <- nn_ready_data$Y
+
+# Preview final matrix
+cat("\nFirst 5 rows of X_train (Scaled & Integer Encoded):\n")
+print(head(X_train[, 1:5]))

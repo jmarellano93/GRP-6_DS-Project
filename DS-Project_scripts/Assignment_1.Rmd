@@ -124,7 +124,7 @@ data <- original_drop
 
 # Basic exploration
 ```{r}
-dim(data) # The shape is 798641:54
+dim(data) # The shape is 798  641:54
 
 # Display the structure of the dataset
 str(data)
@@ -317,6 +317,7 @@ plot_numeric_distributions <- function(data, target_variable, bins = 30) {
 # Example usage:
 plot_numeric_distributions(data = data_filtered, target_variable = "int_rate")
 ```
+
 ```{r}
 # Boxplots to Identify Outliers
 

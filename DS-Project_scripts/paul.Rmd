@@ -1,9 +1,9 @@
 # Workflow
+
 ### write chapter of the workflow and how it differs from best practice
 
-
-
 # Data Preprocessing
+
 In this exploratory data analysis we used following libraries:
 
 ```{r}
@@ -13,12 +13,14 @@ library(fastDummies)
 library(dplyr)
 library(ggplot2)
 library(patchwork)
+library(lubridate)
+library(caret)
 ```
 
 The data is loaded into a dataframe and predefined columns are dropped. With a first look at the data using the data dictionary, as well as looking at the first few rows, a dictionary for the data types is created. The data is casted into the correct data types. and a copy of the original dataframe is created for backup.
 
 ```{r}
-original <- read.csv("~/Documents/Repos/GRP-6_DS-Project/DS-Project_data/LCdata.csv", 
+original <- read.csv("~/GRP-6_DS-Project/DS-Project_data/LCdata.csv", 
                  row.names = NULL, 
                  sep = ";",
                  header = TRUE)
@@ -41,6 +43,7 @@ columns_to_drop <- c("collection_recovery_fee",
                      "total_pymnt_inv",
                      "total_rec_int",
                      "total_rec_late_fee",
+                     "initial_list_status",
                      "total_rec_prncp")
 
 original_drop <- original[, -match(columns_to_drop,  names(original))]
@@ -64,7 +67,6 @@ dtype_dict <- list(
   home_ownership = "factor",
   id = "integer",
   il_util = "numeric",
-  initial_list_status = "factor",
   inq_fi = "integer",
   inq_last_12m = "integer",
   inq_last_6mths = "integer",
@@ -147,20 +149,9 @@ str(data)
 summary(data)
 ```
 
-General observations:
-- Many numeric columns show very large ranges, some with maximum values far beyond plausible real-world limits.
-- Several variables contain placeholder values such as 999, 9999, or -1 indicating missing or unknown information.
-- A number of columns show repeated NA counts, such as NA's: 25 appearing across unrelated features, suggesting systematic missingness.
-- Some categorical columns include unusual entries like (Other) or long HTML-like strings.
+General observations: - Many numeric columns show very large ranges, some with maximum values far beyond plausible real-world limits. - Several variables contain placeholder values such as 999, 9999, or -1 indicating missing or unknown information. - A number of columns show repeated NA counts, such as NA's: 25 appearing across unrelated features, suggesting systematic missingness. - Some categorical columns include unusual entries like (Other) or long HTML-like strings.
 
-Loan amount variables (loan_amnt, funded_amnt, funded_amnt_inv) show values ranging from $500 to tens of millions, which is unrealistic for consumer lending and likely erroneous. Such extreme values need investigation and removal. Interest rate values are within expected ranges.
-Employment fields contain high-cardinality free-text entries and placeholders. Home ownership includes standard entries but also rare placeholders such as ANY or NONE. Annual income includes extreme values exceeding several million dollars, which are likely incorrect and should be capped or treated as NA.
-Zip codes and state entries contain unusual placeholders such as Other. Debt-to-income ratio includes 999 or 999.99 as clear placeholders and should be converted to NA. Delinquency-related variables contain many missing values and some extreme maximums that may be unrealistic.
-Revolving utilization contains impossible values greater than 100 percent, indicating data entry errors. Other credit variables show suspiciously high counts or balances that do not fit typical borrower profiles.
-Common placeholder patterns detected include 999, 999.0, 999.99, 9999, or textual placeholders like Other. These should be replaced with NA during cleaning.
-Repeated NA counts (e.g., NA's: 25) across certain variables suggest missing information originating from the same borrower rows. These relationships should be examined.
-Columns containing URLs or HTML-like descriptions contribute no analytical value and should be removed unless needed for text analysis.
-Issues to fix include extreme outliers, placeholder values requiring conversion to NA, text cleanup for free-text fields, consistent NA handling across affected rows, and parsing of date fields. Irrelevant columns such as url or verbose descriptions can be dropped. After cleaning, a new summary should be generated to confirm improvements.
+Loan amount variables (loan_amnt, funded_amnt, funded_amnt_inv) show values ranging from \$500 to tens of millions, which is unrealistic for consumer lending and likely erroneous. Such extreme values need investigation and removal. Interest rate values are within expected ranges. Employment fields contain high-cardinality free-text entries and placeholders. Home ownership includes standard entries but also rare placeholders such as ANY or NONE. Annual income includes extreme values exceeding several million dollars, which are likely incorrect and should be capped or treated as NA. Zip codes and state entries contain unusual placeholders such as Other. Debt-to-income ratio includes 999 or 999.99 as clear placeholders and should be converted to NA. Delinquency-related variables contain many missing values and some extreme maximums that may be unrealistic. Revolving utilization contains impossible values greater than 100 percent, indicating data entry errors. Other credit variables show suspiciously high counts or balances that do not fit typical borrower profiles. Common placeholder patterns detected include 999, 999.0, 999.99, 9999, or textual placeholders like Other. These should be replaced with NA during cleaning. Repeated NA counts (e.g., NA's: 25) across certain variables suggest missing information originating from the same borrower rows. These relationships should be examined. Columns containing URLs or HTML-like descriptions contribute no analytical value and should be removed unless needed for text analysis. Issues to fix include extreme outliers, placeholder values requiring conversion to NA, text cleanup for free-text fields, consistent NA handling across affected rows, and parsing of date fields. Irrelevant columns such as url or verbose descriptions can be dropped. After cleaning, a new summary should be generated to confirm improvements.
 
 ```{r}
 # vector of placeholder values to replace
@@ -170,8 +161,6 @@ data <- data %>%
   mutate(across(where(is.numeric),
                 ~ ifelse(. %in% placeholders, NA, .)))
 ```
-
-
 
 ### Numerical and Categorical Data
 
@@ -188,6 +177,160 @@ print(numerical_cols)
 print("Categorical Columns:")
 print(categorical_cols)
 ```
+
+#### Categorical Data Analysis
+
+Overview of the categorical columns
+
+```{r}
+table(data$verification_status)
+table(data$term)
+table(data$emp_length)
+table(data$home_ownership)
+table(data$initial_list_status)
+table(data$purpose)
+```
+
+Drop ANY, NONE, OTHER so we can give the levels an order
+
+```{r}
+levels(data$term)
+levels(data$emp_length)
+levels(data$home_ownership)
+```
+
+```{r}
+data$emp_length[data$emp_length == "n/a"] <- NA
+data$emp_length <- factor(
+  data$emp_length,
+  levels = c("< 1 year", "1 year", "2 years", "3 years", "4 years",
+             "5 years", "6 years", "7 years", "8 years",
+             "9 years", "10+ years"),
+  ordered = TRUE
+)
+
+levels(data$emp_length)
+
+```
+replace with real NA
+
+
+```{r}
+data$home_ownership <- factor(data$home_ownership,
+                   levels = c("NONE", "RENT","MORTGAGE", "OWN", "OTHER", "ANY"))
+
+levels(data$home_ownership)
+```
+
+
+
+
+Check of OTHER CAN BE DOUND IN ANY and the other way around
+
+Please note: It does not automatically treat the factor as ordinal (ordered from low → high). It will not influence models that require numeric / ordinal meaning unless ordered=TRUE is set. We should consider to use ordered=True for home_ownership (what with na?), for term and verification_status.
+
+```{r}
+data$verification_status <- as.factor(data$verification_status)
+levels(data$verification_status)
+```
+
+A data quality review was performed on the variables **earliest_cr_line** and **last_credit_pull_d** to ensure correct formatting and logical consistency. These variables describe the borrower’s credit history timeline and are relevant for credit risk modeling and feature engineering.
+
+```{r}
+data$verification_status <- factor(data$verification_status,
+  levels = c("Not Verified", "Source Verified", "Verified"),
+  ordered = TRUE)
+levels(data$verification_status)
+```
+
+```{r}
+
+str(data[, c("earliest_cr_line", "last_credit_pull_d")])
+```
+
+Both columns were inspected and identified as character strings containing values structured in a "Mon-YYYY" format (e.g., "Oct-2004").
+
+```{r}
+data <- data %>%
+  mutate(
+    earliest_cr_line_date   = my(earliest_cr_line),      # convert Mon-YYYY
+    last_credit_pull_d_date = my(last_credit_pull_d)     # convert Mon-YYYY
+  )
+```
+
+```{r}
+str(data[, c("earliest_cr_line_date", "last_credit_pull_d_date")])
+summary(data[, c("earliest_cr_line_date", "last_credit_pull_d_date")])
+```
+
+```{r}
+data %>%
+  filter(is.na(earliest_cr_line_date)) %>%
+  count(earliest_cr_line) %>%
+  arrange(desc(n))
+```
+
+```{r}
+data %>%
+  filter(is.na(earliest_cr_line_date)) %>%
+  select(earliest_cr_line, last_credit_pull_d, earliest_cr_line_date, last_credit_pull_d_date) %>%
+  head(30)
+```
+
+Date fields must be correctly formatted and logically consistent to support downstream analysis. Incorrect or contradictory dates can lead to inaccurate derived features and unreliable modeling outcomes. In this context, it is expected that the earliest recorded credit line cannot occur after the most recent credit pull. Therefore, the relationship: **earliest_cr_line_date ≤ last_credit_pull_d_date** should hold for all valid observations.
+
+```{r}
+
+logic_check <- data %>%
+  mutate(
+    row_id = row_number(),
+    chk_earliest_le_pull = ifelse(
+      !is.na(earliest_cr_line_date) & !is.na(last_credit_pull_d_date),
+      earliest_cr_line_date <= last_credit_pull_d_date,
+      NA
+    )
+  )
+
+logic_summary <- logic_check %>%
+  summarise(
+    n_rows      = n(),
+    n_pairs     = sum(!is.na(chk_earliest_le_pull)),
+    violations  = sum(chk_earliest_le_pull == FALSE, na.rm = TRUE),
+    prop_viol   = ifelse(n_pairs == 0, NA_real_, violations / n_pairs)
+  )
+
+logic_summary
+```
+
+A logical rule comparison was applied to validate the chronological relationship between the two dates. The results indicate that all records with available values satisfy the expected chronological order. No inconsistencies were detected.
+
+```{r}
+data <- data %>% select(-earliest_cr_line, -last_credit_pull_d)
+names(data)
+```
+
+```{r}
+logic_emp <- data %>%
+  mutate(
+    row_id = row_number(),
+    
+    # Fälle, in denen eine Länge angegeben ist, aber kein Arbeitgeber existiert
+    inconsistency_emp_missing_title = (emp_title == "" | is.na(emp_title)) & !is.na(emp_length),
+    
+    # Fälle, in denen ein Arbeitgeber existiert, aber emp_length fehlt
+    inconsistency_missing_length = !(emp_title == "" | is.na(emp_title)) & is.na(emp_length)
+  )
+
+# Zusammenfassung
+logic_emp %>%
+  summarise(
+    inconsistencies_title_missing = sum(inconsistency_emp_missing_title, na.rm = TRUE),
+    inconsistencies_length_missing = sum(inconsistency_missing_length, na.rm = TRUE)
+  )
+
+```
+
+Problem!
 
 ## Data Wrangling
 
@@ -213,6 +356,39 @@ print(paste("Number of duplicate member IDs:", sum(duplicate_member_ids)))
 
 There are no duplicated rows to take care of.
 
+purpose and title have a similar meaning defined in the dictionary. To get an overview of these two columns, they are checked against each other.
+
+```{r}
+purpose_chr <- as.character(data$purpose)
+title_chr   <- as.character(data$title)
+
+# Exact Match
+purpose_title_exact_match <- mean(purpose_chr == title_chr, na.rm = TRUE)
+
+# Fuzzy Match 
+purpose_title_fuzzy_match <- mean(
+  str_to_lower(purpose_chr) == str_to_lower(title_chr),
+  na.rm = TRUE
+)
+
+purpose_title_exact_match
+purpose_title_fuzzy_match
+
+unique_purpose <- length(unique(purpose_chr))
+unique_title   <- length(unique(title_chr))
+
+unique_purpose
+unique_title
+```
+
+Since purpose contains more clear classifications, title was dropped. As a free text field, title does not provide a clear purpose. ("My New Car", "CAR", "Buy a car", "Car loan!!", "Auto", "Car debt consolidation")
+
+```{r}
+data <- data %>%
+  select(-title)
+names(data)
+```
+
 ## Missing Values
 
 In the summary, we can see that there are several columns with a high number of missing values. Depending on the percentage of missing values, we can decide to either drop the column or impute the missing values. For columns with a low percentage of missing values, we can use techniques such as mean/median imputation for numerical columns or mode imputation for categorical columns. For columns with a high percentage of missing values, it may be better to drop the column altogether, as imputing too many missing values can introduce bias into the dataset.
@@ -228,29 +404,33 @@ missing_values <- data.frame(
 print("Missing values per column:")
 print(missing_values)
 ```
+
 Especially for high columns with high NA-counts, one should contact the data manager to understand the logic behind the missing values. It is possible that there was a mistake in the SQL-output or that there is a specific reason why these values are missing. Since this is not possible in this project, we have to make assumptions based on the data dictionary and the summary statistics. NA-values can therefore either be imputed using different imputation methods or dropped.
 
 We have to be careful to drop all rows or columns with NA-values, since sometimes there is a logic behind a missing value. For example, in the column "mths_since_last_delinq", a missing value could mean that the person has never been delinquent. Dropping these rows would lead to a loss of valuable information. Therefore, we have to carefully analyze each column with missing values and decide on a case-by-case basis how to handle them.
 
-- delinq_2yrs: There are 25 missing values, which is a very small percentage of the total data. These values could be imputed or dropped after further anaylsis.
-- inq_last_6mths: There are 25 missing values. These values could be imputed or dropped after further anaylsis. 
-- open_acc: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
-- pub_rec: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
-- total_acc: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
-- acc_now_delinq: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
-- mths_since_last_delinq: There are 408'818 (51.19%) missing values. These missing values likely indicate that the borrower has never been delinquent, yet further in-depth analysis is needed. Possible options for imputation in the latter case would be imputation with -1 or to change the datatype to a categorical variable with levels.
-- mths_since_last_record: There are 675'190 (84.54%) missing values. These missing values likely indicate that the borrower has no public records, yet further in-depth analysis is needed. Possible options for imputation in the latter case would be imputation with -1 or to change the datatype to a categorical variable with levels.
-- revol_bal: There are 2 missing values. These values could be imputed or dropped after further anaylsis.
-- revol_util: There are 454 missing values. These values could be imputed or dropped after further anaylsis.
-- collections_12_mths_ex_med: There are 126 missing values. These values could be imputed or dropped after further anaylsis.
-- mths_since_last_major_derog: There are 599'107 (75.02%) missing values. These missing values likely indicate that the borrower has no major derogatory marks, yet further in-depth analysis is needed. Possible options for imputation in the latter case would be imputation with -1 or to change the datatype to a categorical variable with levels.
-- annual_inc_joint, dti_joint, verification_status_joint: These columns have higher NA-counts due to the fact that they are dependent on the application_type being "JOINT". Dropping these columns would lead to a loss of valuable information for joint applications. A comparison model would have to be made to check whether or not the model gets better when keeping this information for prediciton or not.
-- tot_coll_amt: There are 63'276 (7.92%) missing values. These values could be imputed or dropped after further anaylsis.
-- tot_cur_bal: There are 63'276 (7.92%) missing values. These values could be imputed or dropped after further anaylsis.
-- total_rev_hi_lim: There are 63'276 (7.92%) missing values. These values could be imputed or dropped after further anaylsis.
-- open_acc_6m, open il_6m, open_il_12m, open_il_24m, mths_since_rcnt_il, total_bal_il, il_util, open_rv_12m, open_rv_24m, max_bal_bc, all_util, inq_fi, total_cu_tl, inq_last_12m: All of these columns have a high number of missing values (97.61%). Imputing these missing values would likely introduce bias into the dataset. Therefore, it is better to drop these columns altogether.
+-   delinq_2yrs: There are 25 missing values, which is a very small percentage of the total data. These values could be imputed or dropped after further anaylsis.
+-   inq_last_6mths: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
+-   open_acc: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
+-   pub_rec: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
+-   total_acc: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
+-   acc_now_delinq: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
+-   earliest_cr_line_date: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
+-   last_credit_pull_d_date: There are 25 missing values. These values could be imputed or dropped after further anaylsis.
+-   mths_since_last_delinq: There are 408'818 (51.19%) missing values. These missing values likely indicate that the borrower has never been delinquent, yet further in-depth analysis is needed. Possible options for imputation in the latter case would be imputation with -1 or to change the datatype to a categorical variable with levels.
+-   mths_since_last_record: There are 675'190 (84.54%) missing values. These missing values likely indicate that the borrower has no public records, yet further in-depth analysis is needed. Possible options for imputation in the latter case would be imputation with -1 or to change the datatype to a categorical variable with levels.
+-   revol_bal: There are 2 missing values. These values could be imputed or dropped after further anaylsis.
+-   revol_util: There are 454 missing values. These values could be imputed or dropped after further anaylsis.
+-   collections_12_mths_ex_med: There are 126 missing values. These values could be imputed or dropped after further anaylsis.
+-   mths_since_last_major_derog: There are 599'107 (75.02%) missing values. These missing values likely indicate that the borrower has no major derogatory marks, yet further in-depth analysis is needed. Possible options for imputation in the latter case would be imputation with -1 or to change the datatype to a categorical variable with levels.
+-   annual_inc_joint, dti_joint, verification_status_joint: These columns have higher NA-counts due to the fact that they are dependent on the application_type being "JOINT". Dropping these columns would lead to a loss of valuable information for joint applications. A comparison model would have to be made to check whether or not the model gets better when keeping this information for prediciton or not.
+-   tot_coll_amt: There are 63'276 (7.92%) missing values. These values could be imputed or dropped after further anaylsis.
+-   tot_cur_bal: There are 63'276 (7.92%) missing values. These values could be imputed or dropped after further anaylsis.
+-   total_rev_hi_lim: There are 63'276 (7.92%) missing values. These values could be imputed or dropped after further anaylsis.
+-   open_acc_6m, open il_6m, open_il_12m, open_il_24m, mths_since_rcnt_il, total_bal_il, il_util, open_rv_12m, open_rv_24m, max_bal_bc, all_util, inq_fi, total_cu_tl, inq_last_12m: All of these columns have a high number of missing values (97.61%). Imputing these missing values would likely introduce bias into the dataset. Therefore, it is better to drop these columns altogether.
 
-We can filter out the columns with >95% missing values. Imputing these will introduce bias into the dataset. Therefore we will drop these columns.
+We can filter out the columns with \>95% missing values. Imputing these will introduce bias into the dataset. Therefore we will drop these columns.
+
 ```{r}
 # Columns to drop due to high percentage of missing values
 columns_to_drop_na <- c("open_acc_6m",
@@ -272,8 +452,8 @@ cleaned_data <- data[, -match(columns_to_drop_na, names(data))]
 dim(cleaned_data) # 798'641 rows and 40 columns now
 ```
 
-
 It is noticeable that there are exactly 25 rows with NA-values in multiple columns. If these 25 rows are always the same, it would make sense to drop these rows altogether instead of imputing the missing values.
+
 ```{r}
 # Identify rows with NA values in the specified columns
 na_rows <- data %>%
@@ -282,11 +462,15 @@ na_rows <- data %>%
          is.na(open_acc) |
          is.na(pub_rec) |
          is.na(total_acc) |
+         is.na(earliest_cr_line_date) |
+         is.na(last_credit_pull_d_date) |
          is.na(acc_now_delinq))
 print("Rows with NA values in specified columns:")
 print(na_rows)
 ```
+
 As seen in the output, the 25 rows with NA-values are indeed always the same. Therefore we filter them out of the cleaned dataset.
+
 ```{r}
 # Remove rows with id values found in na_rows
 cleaned_data <- cleaned_data %>%
@@ -295,6 +479,7 @@ dim(cleaned_data) # 798'616 rows and 40 columns now
 ```
 
 A similar trend can be seen in tot_call_amt, tot_cur_bal and total_rev_hi_lim, where exactly 63'276 rows have NA-values in all three columns. We check if these rows are the same and filter them out of the cleaned dataset if so.
+
 ```{r}
 # Count how many rows have ALL THREE columns missing
 na_all3 <- cleaned_data %>%
@@ -319,84 +504,83 @@ cleaned_data <- cleaned_data %>%
 # Show how many rows remain
 cat("Remaining rows after dropping these:", nrow(cleaned_data), "\n")
 ```
-The variables tot_coll_amt, tot_cur_bal, and total_rev_hi_lim represent a borrower’s total collection amount, total current balances, and total revolving credit limit. These three features describe the borrower’s overall credit utilization profile, which is essential for assessing creditworthiness.
-In the cleaned dataset, 63'251 rows had all three of these variables missing simultaneously.
-Such rows were removed because:
-- They contain no usable information about the borrower’s credit balance.
-- With all three fields missing, the borrower’s credit exposure cannot be approximated or imputed reliably.
-- The missingness is structural, not random.
-- Borrowers with all three fields missing typically reflect incomplete or corrupted credit bureau data, not normal variation.
-- Imputation is not appropriate when the entire feature set is missing.
-- Imputing values would inject arbitrary numbers into critical financial variables, degrading model validity.
-- They represent a very small portion of the overall dataset, so dropping them does not meaningfully reduce sample size or introduce bias.
-For these reasons, rows where tot_coll_amt, tot_cur_bal, and total_rev_hi_lim were all NA were excluded from further analysis.
+
+The variables tot_coll_amt, tot_cur_bal, and total_rev_hi_lim represent a borrower’s total collection amount, total current balances, and total revolving credit limit. These three features describe the borrower’s overall credit utilization profile, which is essential for assessing creditworthiness. In the cleaned dataset, 63'251 rows had all three of these variables missing simultaneously. Such rows were removed because: - They contain no usable information about the borrower’s credit balance. - With all three fields missing, the borrower’s credit exposure cannot be approximated or imputed reliably. - The missingness is structural, not random. - Borrowers with all three fields missing typically reflect incomplete or corrupted credit bureau data, not normal variation. - Imputation is not appropriate when the entire feature set is missing. - Imputing values would inject arbitrary numbers into critical financial variables, degrading model validity. - They represent a very small portion of the overall dataset, so dropping them does not meaningfully reduce sample size or introduce bias. For these reasons, rows where tot_coll_amt, tot_cur_bal, and total_rev_hi_lim were all NA were excluded from further analysis.
 
 ### Joint accounts
+
 ```{r}
 unique(cleaned_data$application_type)
 ```
+
 ```{r}
 sum(cleaned_data$application_type == "JOINT", na.rm = TRUE)
 mean(cleaned_data$application_type == "JOINT", na.rm = TRUE) * 100
 ```
+
 In the dataset, only 460 rows are labeled as joint applications, corresponding to 0.06% of the total available observations. These records were removed, along with all joint-specific variables, for the following reasons:
 
 #### 1. Extremely Small Sample Size
-Joint applications represent only 460 observations out of the full dataset.  
+
+Joint applications represent only 460 observations out of the full dataset.\
 With such a small proportion (0.06%), this subgroup is too small to:
 
-- learn stable statistical patterns,
-- contribute meaningfully to model performance,
-- or support reliable parameter estimation.
+-   learn stable statistical patterns,
+-   contribute meaningfully to model performance,
+-   or support reliable parameter estimation.
 
 Including a subgroup of this size would introduce noise rather than useful signal.
 
 #### 2. Structural Differences Between Joint and Individual Applications
-Joint applications reflect the combined financial profile of two borrowers.  
+
+Joint applications reflect the combined financial profile of two borrowers.\
 This leads to fundamental structural differences compared with single-applicant data:
 
-- income fields may represent combined household income,
-- debt-to-income ratios follow different calculations,
-- credit history may aggregate information from two individuals,
-- and several features are exclusive to joint borrowers (e.g., `annual_inc_joint`, `dti_joint`, `verification_status_joint`).
+-   income fields may represent combined household income,
+-   debt-to-income ratios follow different calculations,
+-   credit history may aggregate information from two individuals,
+-   and several features are exclusive to joint borrowers (e.g., `annual_inc_joint`, `dti_joint`, `verification_status_joint`).
 
 These differences produce incompatible distributions that violate the assumption of data homogeneity needed for model training.
 
 #### 3. Joint-Specific Columns Are Not Usable for Modeling
-Variables such as `annual_inc_joint`, `dti_joint`, and `verification_status_joint` apply only to joint applications.  
+
+Variables such as `annual_inc_joint`, `dti_joint`, and `verification_status_joint` apply only to joint applications.\
 For over 99.9% of rows, these fields are always NA, making them:
 
-- unsuitable for imputation,
-- non-informative for the main model,
-- and a source of unnecessary sparsity and complexity.
+-   unsuitable for imputation,
+-   non-informative for the main model,
+-   and a source of unnecessary sparsity and complexity.
 
 Removing these columns simplifies preprocessing while avoiding misleading predictors.
 
 #### 4. Including Joint Records Reduces Model Stability
-Joint applications follow different underwriting rules and show distinct patterns of missingness, income distribution, and credit utilisation.  
+
+Joint applications follow different underwriting rules and show distinct patterns of missingness, income distribution, and credit utilisation.\
 Mixing these with single applicants can distort:
 
-- learned feature relationships,
-- decision tree splits,
-- regression coefficients,
-- and probability calibration.
+-   learned feature relationships,
+-   decision tree splits,
+-   regression coefficients,
+-   and probability calibration.
 
 Excluding them leads to a more stable and generalizable model for the primary population of interest.
 
 #### 5. Why Not Build a Separate Model for Joint Applications?
+
 Although joint applications differ structurally, creating a standalone model is not feasible for the following reasons:
 
-- The sample size (n = 460) is far too small to support:
-  - model training,
-  - validation,
-  - meaningful performance evaluation,
-  - or hyperparameter tuning.
-- A separate model would suffer from:
-  - overfitting,
-  - unstable parameter estimates,
-  - unreliable predictions,
-  - and inability to generalize to new joint borrowers.
-- Joint applications are too rare to justify maintaining a dedicated modeling pipeline, monitoring process, or deployment flow.
+-   The sample size (n = 460) is far too small to support:
+    -   model training,
+    -   validation,
+    -   meaningful performance evaluation,
+    -   or hyperparameter tuning.
+-   A separate model would suffer from:
+    -   overfitting,
+    -   unstable parameter estimates,
+    -   unreliable predictions,
+    -   and inability to generalize to new joint borrowers.
+-   Joint applications are too rare to justify maintaining a dedicated modeling pipeline, monitoring process, or deployment flow.
 
 For these reasons, a separate joint-application model cannot be developed in a reliable or operationally meaningful way.
 
@@ -405,7 +589,7 @@ For these reasons, a separate joint-application model cannot be developed in a r
 joint_cols <- c(
   "annual_inc_joint",
   "dti_joint",
-  "verified_status_joint"
+  "verification_status_joint"
 )
 
 # Only drop columns that actually exist in the dataset
@@ -428,9 +612,6 @@ cleaned_data <- cleaned_data %>%
 dim(cleaned_data) # 734'905 rows and 37 columns now
 ```
 
-
-
-
 ```{r}
 # Calculate the amount and percentage of missing values for each column
 missing_values <- data.frame(
@@ -444,11 +625,8 @@ print(missing_values)
 ```
 
 ## Data Anomalies
-To check for data anomalies one should know the logical boundaries of each column. For example, a negative annual income would be an anomaly. Since we do not have this information, we can only check for obvious anomalies such as negative values in columns that should only contain positive values.
-Furthermore,  we can check for outliers using boxplots or z-scores. Outliers can be defined as values that are more than 3 standard deviations away from the mean. These outliers can be investigated further to determine if they are valid data points or if they should be removed from the dataset.
-Next, one can check for inconsistent data entries. For example, if a column contains categorical data, one can check for typos or inconsistent capitalization. These inconsistencies can be corrected to ensure that the data is consistent throughout the dataset.
-Finally, one can check for logical inconsistencies in the data. For example, if a person has no delinquencies in the last 24 months, but has a high number of delinquencies in the last 2 years, this would be a logical inconsistency. These inconsistencies can be investigated further to determine if they are valid data points or if they should be corrected or removed from the dataset.
 
+To check for data anomalies one should know the logical boundaries of each column. For example, a negative annual income would be an anomaly. Since we do not have this information, we can only check for obvious anomalies such as negative values in columns that should only contain positive values. Furthermore, we can check for outliers using boxplots or z-scores. Outliers can be defined as values that are more than 3 standard deviations away from the mean. These outliers can be investigated further to determine if they are valid data points or if they should be removed from the dataset. Next, one can check for inconsistent data entries. For example, if a column contains categorical data, one can check for typos or inconsistent capitalization. These inconsistencies can be corrected to ensure that the data is consistent throughout the dataset. Finally, one can check for logical inconsistencies in the data. For example, if a person has no delinquencies in the last 24 months, but has a high number of delinquencies in the last 2 years, this would be a logical inconsistency. These inconsistencies can be investigated further to determine if they are valid data points or if they should be corrected or removed from the dataset.
 
 ```{r}
 # Check for negative values in numerical columns
@@ -457,7 +635,9 @@ negative_values <- sapply(cleaned_data[numerical_cols], function(col) sum(col < 
 print("Negative values in numerical columns:")
 print(negative_values)
 ```
+
 ### Outlier-Analysis
+
 ```{r}
 # Boxplot & Histogram for numerical columns to visualize outliers with ggplot2
 for (col_name in numerical_cols) {
@@ -480,6 +660,7 @@ for (col_name in numerical_cols) {
 In the following section we will go through all columns and check for anomalies and outliers. If any are found, we will decide on a case-by-case basis how to handle them.
 
 #### Loan amount (loan_amnt)
+
 ```{r}
 # Find the top 10 most frequent loan amounts
 top_loan_amounts <- cleaned_data %>%
@@ -490,9 +671,11 @@ top_loan_amounts <- cleaned_data %>%
 
 print(top_loan_amounts) # Lending cap is found at 35'000, be aware of this in modelling
 ```
-We see a high spike in the upper range of the loan amount. This is due to the fact that Lending Club has a maximum loan amount of $35'000. Therefore, this is not an anomaly but rather a logical boundary.
+
+We see a high spike in the upper range of the loan amount. This is due to the fact that Lending Club has a maximum loan amount of \$35'000. Therefore, this is not an anomaly but rather a logical boundary.
 
 Due to the big range from minimum to maximum loan amount, one could consider to scale this feature before modelling. A log-transformation could also be considered. A log-transformation column of loan amount is added to the cleaned dataset.
+
 ```{r}
 # Add log-transformed loan amount column
 cleaned_data <- cleaned_data %>%
@@ -508,7 +691,9 @@ ggplot(cleaned_data, aes(y = log_loan_amnt)) +
   ggtitle("Boxplot of Log-Transformed Loan Amount") +
   theme_minimal()
 ```
+
 #### Annual income (annual_inc)
+
 ```{r}
 # Show the lowest 5 and highest 5 annual incomes. Write as function so it can be used in later analyses
 show_extreme_values <- function(data, column_name, n = 5) {
@@ -527,12 +712,13 @@ print(extreme_annual_inc$lowest)
 print("Highest 5 annual incomes:")
 print(extreme_annual_inc$highest)
 ```
+
 ```{r}
 summary(cleaned_data$annual_inc)
 ```
 
-The variable annual_inc showed a highly skewed distribution with a mean of approximately $75'556, a median of $65,000, and a 75th percentile of $90,000. These values are consistent with typical income patterns in US LendingClub borrower populations, where most applicants earn between $40,000 and $120,000. The standard deviation of roughly $65,000 suggests that even extreme values should rarely exceed $300,000–$350,000, and this aligns with known domain expectations: in comparable datasets, the 99th percentile is typically around $250,000 to $300,000. Despite this, the dataset contained a number of extremely high incomes, including values between $500,000 and several million dollars, with a maximum of $9,500,000. Inspection of the associated employment titles revealed clear contradictions: applicants reporting incomes in the millions frequently listed occupations such as “Driver,” “Registered Nurse,” “Cashier,” or other roles incompatible with such earnings. This strongly suggests data entry or import errors, likely caused by misplaced decimals or dropped separators during ingestion (for example, entering 75,500 as 7,550,000).
-Based on both the statistical distribution and domain knowledge, $500,000 was chosen as a conservative upper limit above which values are implausible. This threshold lies well beyond the expected upper tail of genuine borrower incomes and ensures that legitimate high-earning roles such as executives or surgeons are not incorrectly altered. For all observations with annual_inc greater than $500,000, the income value was divided by 100, reflecting the most likely underlying data error pattern. After this correction, the adjusted values integrated smoothly into the natural income distribution, providing additional support for the validity of the transformation. Because dti is directly dependent on income, the dti values for these corrected rows were set to NA, as their original values were derived from corrupted income entries. This approach preserves realistic data structure, corrects clear inconsistencies, and avoids removing potentially informative observations.
+The variable annual_inc showed a highly skewed distribution with a mean of approximately \$75'556, a median of \$65,000, and a 75th percentile of \$90,000. These values are consistent with typical income patterns in US LendingClub borrower populations, where most applicants earn between \$40,000 and \$120,000. The standard deviation of roughly \$65,000 suggests that even extreme values should rarely exceed \$300,000–\$350,000, and this aligns with known domain expectations: in comparable datasets, the 99th percentile is typically around \$250,000 to \$300,000. Despite this, the dataset contained a number of extremely high incomes, including values between \$500,000 and several million dollars, with a maximum of \$9,500,000. Inspection of the associated employment titles revealed clear contradictions: applicants reporting incomes in the millions frequently listed occupations such as “Driver,” “Registered Nurse,” “Cashier,” or other roles incompatible with such earnings. This strongly suggests data entry or import errors, likely caused by misplaced decimals or dropped separators during ingestion (for example, entering 75,500 as 7,550,000). Based on both the statistical distribution and domain knowledge, \$500,000 was chosen as a conservative upper limit above which values are implausible. This threshold lies well beyond the expected upper tail of genuine borrower incomes and ensures that legitimate high-earning roles such as executives or surgeons are not incorrectly altered. For all observations with annual_inc greater than \$500,000, the income value was divided by 100, reflecting the most likely underlying data error pattern. After this correction, the adjusted values integrated smoothly into the natural income distribution, providing additional support for the validity of the transformation. Because dti is directly dependent on income, the dti values for these corrected rows were set to NA, as their original values were derived from corrupted income entries. This approach preserves realistic data structure, corrects clear inconsistencies, and avoids removing potentially informative observations.
+
 ```{r}
 # Fix annual income values greater than 500'000 by dividing by 100, for the same rows, set dti to NA
 cleaned_data <- cleaned_data %>%
@@ -550,15 +736,18 @@ ggplot(cleaned_data, aes(y = annual_inc)) +
   ggtitle("Boxplot of Annual Income (After Fixing)") +
   theme_minimal()
 ```
+
 ```{r}
 # Show highest values of annual income after fixing
 extreme_annual_inc_after <- show_extreme_values(cleaned_data, "annual_inc", n = 10)
 print("Highest 10 annual incomes after fixing:")
 print(extreme_annual_inc_after$highest)
 ```
-Since the data is still right-skewed, one could consider to scale this feature before modelling. 
+
+Since the data is still right-skewed, one could consider to scale this feature before modelling.
 
 #### debt-to-income ratio (dti)
+
 ```{r}
 summary(cleaned_data$dti)
 ```
@@ -570,10 +759,9 @@ print(extreme_dti$lowest)
 print("Highest 5 dti values:")
 print(extreme_dti$highest)
 ```
-The variable dti (debt-to-income ratio) is another field that exhibits irregularities. After setting dti to NA for rows in which annual_inc was either 0 or exceeded $500,000 (because those income values were clearly corrupted), we examined the remaining distribution. Since installment is not available in this dataset, recalculating DTI from first principles is not possible. This limits the ability to validate each individual entry directly, so data quality assessment must rely on a combination of statistical outlier detection and domain knowledge.
-DTI values > 100% are implausible for approved consumer loans and contradict typical underwriting standards, where DTIs above 60–70% are rarely accepted. The fact that the associated int_rate values for these rows are not exceptionally high further suggests that these DTIs do not reflect real borrower risk but are instead the result of data errors or import inconsistencies. Therefore, DTI values above 100% were set to NA for later imputation if desired.
-On the lower end, dti == 0 is also highly unlikely for the majority of loan applications, particularly when the stated loan purpose is debt_consolidation. This purpose implies existing financial obligations, so a DTI of zero contradicts the expected semantics of the loan record. To investigate this pattern, we inspected the distribution of loan purposes among rows with dti == 0, which supports the conclusion that many of these entries are erroneous or incomplete.
-To complement domain-based reasoning, we also examined statistical outliers using the standard criterion of Q3 + 1.5 × IQR. The computed upper bound identifies additional entries far outside the expected range for DTI in consumer lending. Since these values cannot be recalculated due to the absence of installment or any alternative variable representing monthly debt payments, these extreme values cannot be corrected directly. Based on both statistical outlier detection and domain plausibility, they were set to NA. This ensures that clearly invalid DTI values do not influence the modeling process while retaining the remainder of the dataset for downstream analysis.
+
+The variable dti (debt-to-income ratio) is another field that exhibits irregularities. After setting dti to NA for rows in which annual_inc was either 0 or exceeded \$500,000 (because those income values were clearly corrupted), we examined the remaining distribution. Since installment is not available in this dataset, recalculating DTI from first principles is not possible. This limits the ability to validate each individual entry directly, so data quality assessment must rely on a combination of statistical outlier detection and domain knowledge. DTI values \> 100% are implausible for approved consumer loans and contradict typical underwriting standards, where DTIs above 60–70% are rarely accepted. The fact that the associated int_rate values for these rows are not exceptionally high further suggests that these DTIs do not reflect real borrower risk but are instead the result of data errors or import inconsistencies. Therefore, DTI values above 100% were set to NA for later imputation if desired. On the lower end, dti == 0 is also highly unlikely for the majority of loan applications, particularly when the stated loan purpose is debt_consolidation. This purpose implies existing financial obligations, so a DTI of zero contradicts the expected semantics of the loan record. To investigate this pattern, we inspected the distribution of loan purposes among rows with dti == 0, which supports the conclusion that many of these entries are erroneous or incomplete. To complement domain-based reasoning, we also examined statistical outliers using the standard criterion of Q3 + 1.5 × IQR. The computed upper bound identifies additional entries far outside the expected range for DTI in consumer lending. Since these values cannot be recalculated due to the absence of installment or any alternative variable representing monthly debt payments, these extreme values cannot be corrected directly. Based on both statistical outlier detection and domain plausibility, they were set to NA. This ensures that clearly invalid DTI values do not influence the modeling process while retaining the remainder of the dataset for downstream analysis.
+
 ```{r}
 # How many values are above upper bound (Q3 + 1.5*IQR) for dti
 dti_Q3 <- quantile(cleaned_data$dti, 0.75, na.rm = TRUE)
@@ -624,17 +812,21 @@ plot_after <- ggplot(cleaned_data, aes(x = dti)) +
 
 plot_after
 ```
+
 #### Delinquencies
+
 ```{r}
 # Inspect contradictions between delinq_2yrs and mths_since_last_delinq
 extreme_delinq <- cleaned_data%>%
   filter(delinq_2yrs > 0 & mths_since_last_delinq > 24)
 print(extreme_delinq) # 1'261 rows
 ```
-The variables delinq_2yrs (number of delinquencies in the past 24 months) and mths_since_last_delinq (months since the most recent delinquency) both describe aspects of a borrower’s delinquency history and must therefore be internally consistent. A borrower who had at least one delinquency in the past 24 months (delinq_2yrs > 0) must have a corresponding mths_since_last_delinq value between 0 and 24. Any value above 24 months indicates a contradiction, typically originating from stale bureau data or import inconsistencies. Because delinq_2yrs represents a stable bureau summary metric, it is considered more reliable than the more granular timing field. Therefore, we treat mths_since_last_delinq as incorrect in such cases and set it to NA for later imputation.
+
+The variables delinq_2yrs (number of delinquencies in the past 24 months) and mths_since_last_delinq (months since the most recent delinquency) both describe aspects of a borrower’s delinquency history and must therefore be internally consistent. A borrower who had at least one delinquency in the past 24 months (delinq_2yrs \> 0) must have a corresponding mths_since_last_delinq value between 0 and 24. Any value above 24 months indicates a contradiction, typically originating from stale bureau data or import inconsistencies. Because delinq_2yrs represents a stable bureau summary metric, it is considered more reliable than the more granular timing field. Therefore, we treat mths_since_last_delinq as incorrect in such cases and set it to NA for later imputation.
+
 ```{r}
 cleaned_data <- cleaned_data %>%
-  mutate(mths_since_last_delinq = ifelse(delinq_2yrs > 0 &
+      mutate(mths_since_last_delinq = ifelse(delinq_2yrs > 0 &
   mths_since_last_delinq > 24,
   NA,
   mths_since_last_delinq))
@@ -642,14 +834,19 @@ cleaned_data <- cleaned_data %>%
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
+
 We then examine the opposite contradiction: cases where mths_since_last_delinq == 0 indicates a delinquency in the current reporting period, yet delinq_2yrs == 0 suggests no recent delinquencies. A zero-month value is highly specific and therefore more trustworthy than a summary count that may not have been updated in time. In these cases, we correct the count by setting delinq_2yrs to 1.
+
+ATTENTION: We do a lot of NAs in mths_since_last_delinq with that.
+
+
 ```{r}
 suspicious_rows_zero <- cleaned_data %>%
   filter(mths_since_last_delinq == 0 & delinq_2yrs == 0)
 print(suspicious_rows_zero) # 1 rows
 
 cleaned_data <- cleaned_data %>%
-  mutate(delinq_2yrs = ifelse(mths_since_last_delinq == 0 &
+  mutate(delinq_2yrs = ifelse(!is.na(mths_since_last_delinq) & mths_since_last_delinq == 0 &
   delinq_2yrs == 0,
   1,
   delinq_2yrs))
@@ -657,7 +854,9 @@ cleaned_data <- cleaned_data %>%
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
-A further consistency check is performed using acc_now_delinq, which counts currently delinquent accounts. A borrower cannot have acc_now_delinq > 0 while simultaneously reporting delinq_2yrs == 0, nor can the time since last delinquency be greater than zero. Current delinquency is the strongest and most precise indicator; therefore, contradictions involving acc_now_delinq must be resolved by correcting or removing inconsistent timing information.
+
+A further consistency check is performed using acc_now_delinq, which counts currently delinquent accounts. A borrower cannot have acc_now_delinq \> 0 while simultaneously reporting delinq_2yrs == 0, nor can the time since last delinquency be greater than zero. Current delinquency is the strongest and most precise indicator; therefore, contradictions involving acc_now_delinq must be resolved by correcting or removing inconsistent timing information.
+
 ```{r}
 # Current delinquency contradicting long time-since
 cleaned_data %>%
@@ -670,7 +869,9 @@ cleaned_data %>%
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
+
 Since these cases cannot be reliably corrected without full credit bureau histories, we conservatively mark inconsistent timing information as missing.
+
 ```{r}
 cleaned_data <- cleaned_data %>%
 mutate(mths_since_last_delinq = ifelse(acc_now_delinq > 0 &
@@ -681,8 +882,9 @@ mutate(mths_since_last_delinq = ifelse(acc_now_delinq > 0 &
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
-After cleaning, the delinquency fields show internally coherent patterns. However, the presence of NA values creates challenges for predictive modeling. Importantly, NAs in mths_since_last_delinq do not represent missing data but rather the legitimate case of “no delinquencies on record.” To make the data suitable for modeling without inappropriate imputation, we convert delinquency fields to categorical indicators. This approach aligns with industry-standard credit risk modeling practices and avoids encoding NA as missing risk signals.
-We first bucketize delinq_2yrs into an ordered categorical variable:
+
+After cleaning, the delinquency fields show internally coherent patterns. However, the presence of NA values creates challenges for predictive modeling. Importantly, NAs in mths_since_last_delinq do not represent missing data but rather the legitimate case of “no delinquencies on record.” To make the data suitable for modeling without inappropriate imputation, we convert delinquency fields to categorical indicators. This approach aligns with industry-standard credit risk modeling practices and avoids encoding NA as missing risk signals. We first bucketize delinq_2yrs into an ordered categorical variable:
+
 ```{r}
 cleaned_data <- cleaned_data %>%
 mutate(delinq_2yrs_cat = case_when(
@@ -696,20 +898,32 @@ mutate(delinq_2yrs_cat = case_when(
   levels = c("0", "1", "2", "3+"),
   ordered = TRUE))
 ```
+
 We then convert mths_since_last_delinq into recency buckets, including an explicit category for borrowers with no delinquency history:
+
 ```{r}
 cleaned_data <- cleaned_data %>%
   mutate(delinq_recency = case_when(
-  is.na(mths_since_last_delinq) ~ "none",  # no delinquencies on record
-  mths_since_last_delinq == 0 ~ "0",
-  mths_since_last_delinq <= 6 ~ "1-6",
-  mths_since_last_delinq <= 12 ~ "7-12",
-  mths_since_last_delinq <= 24 ~ "13-24",
-  TRUE ~ NA_character_
+    is.na(mths_since_last_delinq) ~ "none",
+    mths_since_last_delinq == 0 ~ "0",
+    mths_since_last_delinq <= 6 ~ "1-6",
+    mths_since_last_delinq <= 12 ~ "7-12",
+    mths_since_last_delinq <= 24 ~ "13-24",
+    mths_since_last_delinq > 24 ~ "24+",
+    TRUE ~ NA_character_
   )) %>%
-  mutate(delinq_recency = factor(delinq_recency))
+  mutate(delinq_recency = factor(delinq_recency,
+                                 levels = c("0", "1-6", "7-12", "13-24", "24+", "none"),
+                                 ordered = TRUE))
 ```
+
+```{r}
+
+```
+
+
 Finally, we encode acc_now_delinq as a binary indicator, as is standard in risk modeling:
+
 ```{r}
 cleaned_data <- cleaned_data %>%
 mutate(acc_now_delinq_bin = ifelse(acc_now_delinq > 0, 1, 0))
@@ -717,14 +931,17 @@ mutate(acc_now_delinq_bin = ifelse(acc_now_delinq > 0, 1, 0))
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
+
 After applying these transformations, delinquency information is internally consistent, free of logical contradictions, and model-ready without requiring imputation.
+
 ```{r}
 view(cleaned_data)
 ```
 
-
 #### Inqueries in last 6 months (Inq_last_6mths)
+
 The variable inq_last_6mths reports how many hard credit inquiries the borrower received within the past six months. Since this is a discrete count of bureau events, it should take small integer values. In typical consumer credit datasets, most borrowers have between 0 and 4 recent inquiries, with gradually fewer cases above that range. Before applying any plausibility or consistency checks, we first examine the raw frequency distribution to understand how the values are spread and whether implausible or unexpected patterns appear.
+
 ```{r}
 # Count distinct values of inq_last_6mths
 inq_counts <- cleaned_data %>%
@@ -736,13 +953,17 @@ inq_counts
 ```
 
 #### Months since last record (mths_since_last_record) & public records (pub_rec)
+
 The variables mths_since_last_record and pub_rec describe the borrower’s public-record history and therefore must follow strict internal consistency rules. A non-missing value in mths_since_last_record (whether 0 or greater) indicates that the borrower has had at least one public record in the past, meaning that pub_rec must be at least 1. An NA in mths_since_last_record is not a missing value in the statistical sense but represents the meaningful case of “no public record on file,” so pub_rec must be 0. Furthermore, if mths_since_last_record equals 0, a new public record has been reported in the current cycle, which again requires that pub_rec is at least 1. Based on these rules, we first search for violations where a positive month value appears together with a zero or missing public-record count, which would indicate an impossible history.
+
 ```{r}
 suspicious_pub_record_rows <- cleaned_data %>%
   filter(mths_since_last_record > 0 & (is.na(pub_rec) | pub_rec == 0))
 suspicious_pub_record_rows # 0 rows
 ```
+
 No contradictions of this type appeared in the dataset. Next, we examine rows where mths_since_last_record equals 0 but pub_rec is 0, which incorrectly implies a new public record with a record count of zero. These rows require correction by setting pub_rec to 1.
+
 ```{r}
 suspicious_pub_record_rows_0 <- cleaned_data %>%
   filter(mths_since_last_record == 0 & pub_rec == 0)
@@ -751,13 +972,17 @@ suspicious_pub_record_rows_0 # 0 rows
 cleaned_data <- cleaned_data %>%
   mutate(pub_rec = ifelse(mths_since_last_record == 0 & pub_rec == 0, 1, pub_rec))
 ```
+
 We then verify that no cases exist where mths_since_last_record is NA but pub_rec is greater than 0, which would suggest that a public record exists but the time stamp is missing.
+
 ```{r}
 suspicious_pub_record_rows_na <- cleaned_data %>%
   filter(is.na(mths_since_last_record) & pub_rec > 0)
 suspicious_pub_record_rows_na # 0 rows
 ```
+
 Since any non-missing value of mths_since_last_record must imply at least one public record, rows where the month value is present but pub_rec is NA are inconsistent as well. These NA values are corrected by assigning pub_rec = 1 because the time stamp indicates the presence of at least one public record.
+
 ```{r}
 cleaned_data <- cleaned_data %>%
   filter(!(is.na(pub_rec) & !is.na(mths_since_last_record)))
@@ -765,7 +990,9 @@ cleaned_data <- cleaned_data %>%
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
+
 After these corrections, the relationship between mths_since_last_record and pub_rec is logically coherent. We then inspect the distribution of values to ensure no remaining anomalies.
+
 ```{r}
 cleaned_data %>%
   arrange(mths_since_last_record) %>%
@@ -788,20 +1015,24 @@ cleaned_data %>%
   head(20)
 
 ```
+
 This process ensures that these two variables are mutually consistent and correctly represent the borrower’s public-record history for downstream modeling.
 
 #### open accounts (open_acc)
-The variables open_acc, total_acc, revol_bal, total_rev_hi_lim, and revol_util describe the structure and utilization of the borrower’s current revolving credit profile. These fields must satisfy a set of strict logical rules based on how credit files are constructed. First, the number of currently open accounts (open_acc) cannot exceed the total number of accounts ever opened (total_acc), because an account cannot be open without having existed in the first place. We therefore search for cases where open_acc > total_acc, which should be impossible.
+
+The variables open_acc, total_acc, revol_bal, total_rev_hi_lim, and revol_util describe the structure and utilization of the borrower’s current revolving credit profile. These fields must satisfy a set of strict logical rules based on how credit files are constructed. First, the number of currently open accounts (open_acc) cannot exceed the total number of accounts ever opened (total_acc), because an account cannot be open without having existed in the first place. We therefore search for cases where open_acc \> total_acc, which should be impossible.
+
 ```{r}
 suspicious_open_acc_rows <- cleaned_data %>%
   filter(open_acc > total_acc)
 suspicious_open_acc_rows # 0 rows
 
 ```
+
 Zero such rows were identified. If any would have been identified, modifying the historical count of total_acc would risk fabricating a credit history, whereas open_acc is the value that violates a hard structural constraint. For this reason, the safest correction would have been to set open_acc to NA and let the general imputation strategy handle this variable later.
 
-
 Rows where both values are NA provide no meaningful information about the borrower’s credit file and cannot be logically reconstructed. Since only a small number of rows fall into this category, they are removed.
+
 ```{r}
 # Amount of rows with both open_acc and total_acc as NA
 sum(is.na(cleaned_data$open_acc) & is.na(cleaned_data$total_acc))
@@ -812,7 +1043,9 @@ cleaned_data <- cleaned_data %>%
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
+
 To verify the integrity of the corrected variables, we inspect the lowest and highest values for both open_acc and total_acc, ensuring that extreme cases remain plausible and that no further contradictions appear.
+
 ```{r}
 cleaned_data %>%
   arrange(open_acc) %>%
@@ -834,7 +1067,9 @@ cleaned_data %>%
   select(loan_amnt, open_acc, total_acc, int_rate, term) %>%
   head(20)
 ```
+
 We then examine the revolving credit fields. The variable revol_bal represents the total outstanding balance on revolving lines, while total_rev_hi_lim reflects the total available revolving credit limit across all open accounts. Because a borrower cannot legally owe more than the total available limit, revol_bal must never exceed total_rev_hi_lim. Any row where the balance is greater than the maximum allowable credit limit represents a hard structural inconsistency in the data. Such cases must be corrected by setting revol_bal to NA, since the balance figure is the one that violates a fixed upper boundary.
+
 ```{r}
 suspicious_revol_bal_rows <- cleaned_data %>%
   filter(revol_bal > total_rev_hi_lim)
@@ -846,9 +1081,9 @@ cleaned_data <- cleaned_data %>%
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
-We also check whether the reported utilization ratio (revol_util) is consistent with the balance and credit limit. Utilization should satisfy the relationship 
-revol_util = (revol_bal / 100 * total_rev_hi_lim. 
-A very large number of rows fail this check, which suggests that inconsistencies are not isolated data-entry errors but instead reflect imperfect source reporting or timing differences. Because utilization is the most stable and meaningful of the three variables, the most defensible correction strategy is to recalculate utilization from the cleaned revol_bal and total_rev_hi_lim values.
+
+We also check whether the reported utilization ratio (revol_util) is consistent with the balance and credit limit. Utilization should satisfy the relationship revol_util = (revol_bal / 100 \* total_rev_hi_lim. A very large number of rows fail this check, which suggests that inconsistencies are not isolated data-entry errors but instead reflect imperfect source reporting or timing differences. Because utilization is the most stable and meaningful of the three variables, the most defensible correction strategy is to recalculate utilization from the cleaned revol_bal and total_rev_hi_lim values.
+
 ```{r}
 suspicious_revol_util_rows <- cleaned_data %>%
   filter((revol_util/100) * total_rev_hi_lim < revol_bal)
@@ -862,23 +1097,29 @@ cleaned_data <- cleaned_data %>%
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
-Finally, because revolving balances cannot exist without at least one open revolving account, we verify that all rows with revol_bal > 0 also have open_acc > 0. No violations of this rule were found in the dataset.
+
+Finally, because revolving balances cannot exist without at least one open revolving account, we verify that all rows with revol_bal \> 0 also have open_acc \> 0. No violations of this rule were found in the dataset.
+
 ```{r}
 suspicious_revol_bal_open_acc_rows <- cleaned_data %>%
   filter(revol_bal > 0 & open_acc == 0) 
 suspicious_revol_bal_open_acc_rows # 0 rows
 ```
+
 Together, these steps ensure that the structural relationships between open accounts, total accounts, revolving balances, credit limits, and utilization rates are coherent and compliant with established credit-bureau logic, while avoiding any manipulations that would artificially alter a borrower’s reported credit history.
 
-
 #### Collections and major derogatory events
+
 The field collections_12_mths_ex_med records the number of collection events in the past 12 months and therefore must be a non-negative integer. Since collection events are discrete events recorded by credit bureaus, the value can never be negative or fractional. We identify any rows that violate these conditions and correct them by assigning NA, as such values cannot occur in a real credit file.
+
 ```{r}
 invalid_coll <- cleaned_data %>%
   filter(collections_12_mths_ex_med < 0 | collections_12_mths_ex_med %% 1 != 0)
 invalid_coll # 0 rows
 ```
+
 The variable mths_since_last_major_derog indicates how many months have passed since the last major derogatory event such as bankruptcy, charge-off, foreclosure, or serious delinquency. As with other “months since event” fields, the interpretation is structural: if the borrower has never experienced a major derogatory, the value must be NA; if the borrower has such a history, the value must be zero or positive. Negative months or fractional months are impossible and must be removed. Although delinquency fields do not directly determine whether a major derogatory event occurred, the variable pub_rec (public records) does: any non-missing value in mths_since_last_major_derog implies at least one corresponding public record. Therefore, the following hard rules apply: if pub_rec == 0, then mths_since_last_major_derog must be NA; if mths_since_last_major_derog is zero or greater, then pub_rec must be at least 1. These checks ensure the two fields remain consistent.
+
 ```{r}
 invalid_major_derog <- cleaned_data %>%
   filter(mths_since_last_major_derog < 0 |
@@ -893,7 +1134,9 @@ suspicious_major_derog_present <- cleaned_data %>%
   filter(pub_rec >= 1 & is.na(mths_since_last_major_derog))
 suspicious_major_derog_present # 80'403 rows 
 ```
+
 If pub_rec == 0 but mths_since_last_major_derog is present, the timing field is incorrect and is set to NA. If pub_rec ≥ 1 but mths_since_last_major_derog is missing, the timing field is restored by assigning NA as representing “unknown months since event,” because the presence of a public record confirms that a major derogatory exists but its recency cannot be reconstructed precisely.
+
 ```{r}
 # count how often pub_rec == 0 and mths_since_last_major_derog is not NA
 suspicious_major_derog_missing <- cleaned_data %>%
@@ -904,7 +1147,9 @@ cleaned_data <- cleaned_data %>%
   mutate(mths_since_last_major_derog =
            ifelse(pub_rec == 0, NA, mths_since_last_major_derog))
 ```
+
 Finally, because mths_since_last_major_derog is not a linearly meaningful numeric variable and NA carries semantic information (“no major derogatory on file”), the variable is transformed into a categorical factor with recency buckets. This follows standard credit-modeling practice, where the recency of serious derogatory events is highly predictive but does not behave like a continuous metric. Very recent major derogatories (0–6 months) are associated with sharply elevated risk and therefore require finer granularity, whereas the predictive strength of a derogatory decreases gradually as it ages, with distinct risk breaks around 12, 24, 48, and 84 months. These cut points reflect how bureaus and scorecard models treat derogatory events: an event occurring this month (0) is the most severe signal; 1–6 and 7–12 months represent the critical recent-risk window; 13–24 and 25–48 months reflect medium-term aging; 49–84 months captures late-aging derogatories that still influence risk; and values above 84 months are typically close to falling off the credit report and contribute only minimal predictive value. This structure aligns with FICO guidelines, common bank scorecard binning strategies, and the natural decay of credit-risk signals over time, making a categorical transformation more appropriate than preserving the raw numeric values.
+
 ```{r}
 cleaned_data <- cleaned_data %>%
   mutate(major_derog_recency = case_when(
@@ -919,7 +1164,9 @@ cleaned_data <- cleaned_data %>%
   )) %>%
   mutate(major_derog_recency = factor(major_derog_recency))
 ```
+
 The variables tot_coll_amt and tot_cur_bal also require structural validation. The field tot_coll_amt represents the total historical dollar amount ever assigned to collections. As a monetary field recorded in whole dollars, it must be zero or positive; negative values are impossible and are corrected by setting the field to NA.
+
 ```{r}
 invalid_tot_coll_amt <- cleaned_data %>%
   filter(tot_coll_amt < 0)
@@ -928,7 +1175,9 @@ invalid_tot_coll_amt # 0 rows
 # amount of rows after mutation
 print(nrow(cleaned_data))
 ```
+
 Similarly, tot_cur_bal reflects the borrower’s total current balance across all active credit lines and must also be zero or positive. If this balance is negative, the value is replaced by NA. In addition, if a positive total balance is reported, the borrower must have at least one open account. Because open_acc was previously cleaned, we verify that no rows show a positive balance with zero open accounts, which would be structurally impossible in credit reporting.
+
 ```{r}
 invalid_tot_cur_bal <- cleaned_data %>%
   filter(tot_cur_bal < 0)
@@ -939,6 +1188,7 @@ contradiction_tot_cur_bal <- cleaned_data %>%
 contradiction_tot_cur_bal # 0 rows
 
 ```
+
 ```{r}
 # Boxplot & Histogram for numerical columns to visualize outliers with ggplot2
 for (col_name in numerical_cols) {
@@ -957,23 +1207,23 @@ for (col_name in numerical_cols) {
   print(p1 + p2)
 }
 ```
+
 We still see an outlier at tot_coll_amt. Which we will set to NA
+
 ```{r}
 cleaned_data <- cleaned_data %>%
   mutate(tot_coll_amt = ifelse(tot_coll_amt > 50000, NA, tot_coll_amt))
 ```
 
-Furthermore there are other columns to drop, which aren't useful for modelling or have too many missing values. These columns are:
-- id
-- member-id
-- revol_util: can be calculated with revol_bal and total_rev_hi_lim anyway
+Furthermore there are other columns to drop, which aren't useful for modelling or have too many missing values. These columns are: - id - member-id - revol_util: can be calculated with revol_bal and total_rev_hi_lim anyway
+
 ```{r}
 cleaned_data <- cleaned_data %>%
-  select(-c(id, member_id, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs))
+  select(-c(id, member_id, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs, mths_since_last_record, pub_rec))
 ```
 
-
 We end up with following dataframe for imputation and modeling.
+
 ```{r}
 # amount of columns and rows
 print(dim(cleaned_data))
@@ -986,17 +1236,10 @@ na_percentage <- sapply(cleaned_data, function(x) sum(is.na(x)) / nrow(cleaned_d
 print(na_percentage)
 ```
 
-
-
-
-
-
-
-
-
-
 ### Check the distribution of the target
+
 To ensure that the target variable int_rate is reliable for modeling, the distribution is first examined for impossible values, unexpected patterns, or structural inconsistencies. Interest rates in LendingClub data are always expressed as percentages, typically between 5% and 30%, depending on loan grade and risk. They must therefore be non-negative, non-zero, and should not exceed realistic consumer-credit bounds. We begin by summarizing and plotting the distribution.
+
 ```{r}
 summary(cleaned_data$int_rate)
 
@@ -1008,8 +1251,8 @@ ggplot(cleaned_data, aes(x = int_rate)) +
   theme_minimal()
 
 ```
-We then check for values that fall outside the plausible range of consumer loan interest rates. Negative interest rates, values equal to zero, or extremely high rates (e.g., above 40%) are structurally impossible in this lending context and indicate a data-entry or import error.
 
+We then check for values that fall outside the plausible range of consumer loan interest rates. Negative interest rates, values equal to zero, or extremely high rates (e.g., above 40%) are structurally impossible in this lending context and indicate a data-entry or import error.
 
 ```{r}
 invalid_int_rate <- cleaned_data %>%
@@ -1019,8 +1262,9 @@ invalid_int_rate
 
 print(nrow(invalid_int_rate))
 ```
-Interest rates should also be numeric and typically recorded with at most two decimal places. If values contain long decimal expansions or parsing issues, they would appear in the summary above and require correction, but none were detected in this dataset.
-Although these are not hard inconsistencies, we also examine whether extremely low or high interest rates appear in combinations that contradict typical underwriting outcomes. Very low interest rates (for example, below 5%) or very high rates (above 30%) are possible but unusual. If they occur together with very risky or very strong credit indicators, this can signal stale data or mismatches between borrower characteristics and the risk-based pricing system. We therefore inspect these rows in context using variables available in the dataset, such as recent delinquencies, revolving utilization, number of recent inquiries, annual income, and open account counts.
+
+Interest rates should also be numeric and typically recorded with at most two decimal places. If values contain long decimal expansions or parsing issues, they would appear in the summary above and require correction, but none were detected in this dataset. Although these are not hard inconsistencies, we also examine whether extremely low or high interest rates appear in combinations that contradict typical underwriting outcomes. Very low interest rates (for example, below 5%) or very high rates (above 30%) are possible but unusual. If they occur together with very risky or very strong credit indicators, this can signal stale data or mismatches between borrower characteristics and the risk-based pricing system. We therefore inspect these rows in context using variables available in the dataset, such as recent delinquencies, revolving utilization, number of recent inquiries, annual income, and open account counts.
+
 ```{r}
 # Soft plausibility check: extremely low or high interest rates
 cleaned_data %>%
@@ -1030,70 +1274,168 @@ cleaned_data %>%
 
 print(nrow(cleaned_data))
 ```
+
 The structural checks for the target variable yielded no impossible or inconsistent values, and the resulting distribution of int_rate confirms that the data align with expected lending patterns. The histogram shows a smooth, unimodal distribution centered between roughly 10% and 15%, with values ranging from approximately 6% to just under 30%, which is fully consistent with typical unsecured consumer loans. No negative or zero interest rates, no implausibly high values, and no irregular spikes indicative of parsing errors were detected. Together, these results indicate that the interest-rate variable is clean, internally coherent, and suitable to be used as the modeling target without requiring further preprocessing.
 
 ### Train-val-test split
-For this project, the dataset consisting of 734,905 rows is divided into three independent subsets:
-- Training set (70%) → approx. 514,434 rows
-- Validation set (15%) → approx. 110,236 rows
-- Test set (15%) → approx. 110,236 rows
-This partitioning provides a clear and interpretable workflow while preserving a large training set for model development.
+
+For this project, the dataset consisting of 734,905 rows is divided into three independent subsets: - Training set (70%) → approx. 514,434 rows - Validation set (15%) → approx. 110,236 rows - Test set (15%) → approx. 110,236 rows This partitioning provides a clear and interpretable workflow while preserving a large training set for model development.
 
 #### Why a simple splitting technique
-A single split into training, validation, and test sets offers several practical advantages for this assignment:
-1.  Clarity and interpretabilit
-Each dataset serves a distinct purpose:
-- the training set is used for fitting the models and running cross-validation,
-- the validation set is used for hyperparameter tuning, feature selection, and model comparison,
-- the test set is used once at the end to measure final model performance. This transparency aligns well with the educational objective of explaining each modelling decision.
-2. Large dataset removes instability concerns
-With 734k rows, a single split provides sufficiently large training, validation, and test samples. Variance from resampling is not a major concern with this sample size.
-3. Supports clear explanation of modelling choices
-The project requires interpreting and justifying the effects of:
-- different imputation strategies,
-- different feature selection decisions, model hyperparameters.
-A single split makes these stages easy to isolate and explain.
-4. Avoids unnecessary complexity
-A simple split avoids the computational burden and conceptual overhead of nested cross-validation, which is not required for the learning goals of this project.
+
+A single split into training, validation, and test sets offers several practical advantages for this assignment: 1. Clarity and interpretabilit Each dataset serves a distinct purpose: - the training set is used for fitting the models and running cross-validation, - the validation set is used for hyperparameter tuning, feature selection, and model comparison, - the test set is used once at the end to measure final model performance. This transparency aligns well with the educational objective of explaining each modelling decision. 2. Large dataset removes instability concerns With 734k rows, a single split provides sufficiently large training, validation, and test samples. Variance from resampling is not a major concern with this sample size. 3. Supports clear explanation of modelling choices The project requires interpreting and justifying the effects of: - different imputation strategies, - different feature selection decisions, model hyperparameters. A single split makes these stages easy to isolate and explain. 4. Avoids unnecessary complexity A simple split avoids the computational burden and conceptual overhead of nested cross-validation, which is not required for the learning goals of this project.
 
 #### Why no nested loop
-In theory, nested cross-validation represents the most statistically rigorous approach.
-It separates:
-- the outer loop → unbiased performance estimation
-- the inner loop → model selection, feature selection, imputation choice, hyperparameter tuning
-Benefits of Nested CV
-- Provides the most unbiased estimate of generalization performance
-- Prevents any contamination between:
-  - model selection
-  - preprocessing selection
-  - performance estimation
-- Automatically incorporates data-dependent preprocessing (imputers, scalers, feature selection) into the evaluation loop
-- Ideal for scientific research, regulated environments, or small datasets
-However, nested CV also has drawbacks in this assignment context
-Extremely high computational cost
-Running nested 5×5 CV on 734k rows would require fitting models dozens of times, which is impractical.
-Makes explainability harder
-The assignment requires demonstrating:
-why a specific imputation method was chosen,
-how features were selected,
-how hyperparameters influence model behaviour.
-In nested CV, all these steps are embedded inside opaque inner loops, making it much harder to document and interpret each decision.
-Overkill for a large dataset
-Nested CV is most useful when data is scarce.
-With more than 500k rows in the training set, the benefit over a single validation split is minimal.
-Not aligned with the pedagogical goal
-The purpose of this project is to learn the reasoning behind model choices, not to maximize statistical purity at any cost.
-A simpler split supports clear step-by-step analysis.
 
+In theory, nested cross-validation represents the most statistically rigorous approach. It separates: - the outer loop → unbiased performance estimation - the inner loop → model selection, feature selection, imputation choice, hyperparameter tuning Benefits of Nested CV - Provides the most unbiased estimate of generalization performance - Prevents any contamination between: - model selection - preprocessing selection - performance estimation - Automatically incorporates data-dependent preprocessing (imputers, scalers, feature selection) into the evaluation loop - Ideal for scientific research, regulated environments, or small datasets However, nested CV also has drawbacks in this assignment context Extremely high computational cost Running nested 5×5 CV on 734k rows would require fitting models dozens of times, which is impractical. Makes explainability harder The assignment requires demonstrating: why a specific imputation method was chosen, how features were selected, how hyperparameters influence model behaviour. In nested CV, all these steps are embedded inside opaque inner loops, making it much harder to document and interpret each decision. Overkill for a large dataset Nested CV is most useful when data is scarce. With more than 500k rows in the training set, the benefit over a single validation split is minimal. Not aligned with the pedagogical goal The purpose of this project is to learn the reasoning behind model choices, not to maximize statistical purity at any cost. A simpler split supports clear step-by-step analysis.
 
 ### Imputation
-Choose imputation method with ONLY Train dataset and make a CV within Train dataset to choose the best one
-after you fit set imputation method on the entire TRAINING set
 
-fit imputer on train and apply to val
-fit imputer on train and val and apply to test
+Choose imputation method with ONLY Train dataset and make a CV within Train dataset to choose the best one after you fit set imputation method on the entire TRAINING set
+
+fit imputer on train and apply to val fit imputer on train and val and apply to test
 
 explain that normally one would do data checks again, but we skip this step for brevity
+
+```{r}
+# Calculate missing counts and percentages
+missing_values <- data.frame(
+  column = names(cleaned_data),
+  missing_count = sapply(cleaned_data, function(col) sum(is.na(col))),
+  missing_percentage = round(sapply(cleaned_data, function(col) mean(is.na(col)) * 100), 2)
+)
+
+# Sort by highest missing percentage
+missing_values <- missing_values[order(-missing_values$missing_percentage), ]
+
+head(missing_values, 54)  # just to inspect
+```
+
+```{r}
+
+names(cleaned_data)
+```
+
+```{r}
+
+target_var <- "int_rate"
+
+```
+
+```{r}
+# Split into train, validation, test (example)
+set.seed(123)
+
+# Stratified split: 70% train, 30% temp
+train_index <- createDataPartition(cleaned_data$int_rate, p = 0.7, list = FALSE)
+train_raw   <- cleaned_data[train_index, ]
+temp_raw    <- cleaned_data[-train_index, ]
+
+# Split temp into 50% val, 50% test  -> each 15% of total
+val_index <- createDataPartition(temp_raw$int_rate, p = 0.5, list = FALSE)
+val_raw   <- temp_raw[val_index, ]
+test_raw  <- temp_raw[-val_index, ]
+
+
+```
+
+
+
+```{r}
+make_imputed_splits <- function(train_raw, val_raw, test_raw, method) {
+
+  # Separate predictors and target
+  predictor_names <- setdiff(names(train_raw), "int_rate")
+
+  x_train <- train_raw[, predictor_names]
+  y_train <- train_raw$int_rate
+
+  x_val   <- val_raw[, predictor_names]
+  y_val   <- val_raw$int_rate
+
+  x_test  <- test_raw[, predictor_names]
+  y_test  <- test_raw$int_rate
+
+  # Fit preProcess (imputer) on TRAIN ONLY
+  imputer <- preProcess(x_train, method = method)
+
+  # Apply imputer to all splits (using training params)
+  x_train_imp <- predict(imputer, x_train)
+  x_val_imp   <- predict(imputer, x_val)
+  x_test_imp  <- predict(imputer, x_test)
+
+  # Add target back
+  train_imp <- cbind(x_train_imp, target = y_train)
+  val_imp   <- cbind(x_val_imp,   target = y_val)
+  test_imp  <- cbind(x_test_imp,  target = y_test)
+
+  list(
+    train = train_imp,
+    val   = val_imp,
+    test  = test_imp,
+    imputer = imputer
+  )
+}
+```
+
+```{r}
+median_splits <- make_imputed_splits(
+  train_raw = train_raw,
+  val_raw   = val_raw,
+  test_raw  = test_raw,
+  method    = "medianImpute"
+)
+
+train_median <- median_splits$train
+val_median   <- median_splits$val
+test_median  <- median_splits$test
+```
+
+
+default k = 5
+```{r}
+method = c("center", "scale", "knnImpute")
+
+knn_splits <- make_imputed_splits(
+  train_raw = train_raw,
+  val_raw   = val_raw,
+  test_raw  = test_raw,
+  method    = c("center", "scale", "knnImpute")
+)
+
+train_knn <- knn_splits$train
+val_knn   <- knn_splits$val
+test_knn  <- knn_splits$test
+```
+
+```{r}
+set.seed(123)
+rf_median <- train(
+  target ~ .,
+  data = train_median,
+  method = "rf",
+  trControl = trainControl(method = "cv", number = 5)
+)
+
+pred_val_median <- predict(rf_median, newdata = val_median)
+```
+
+```{r}
+postResample(pred_val_median, val_median[[target_var]])
+```
+
+
+```{r}
+set.seed(123)
+rf_knn <- train(
+  target ~ .,
+  data = train_knn,
+  method = "rf",
+  trControl = trainControl(method = "cv", number = 5)
+)
+
+pred_val_knn <- predict(rf_knn, newdata = val_knn)
+```
 
 ### Feature Selection
 

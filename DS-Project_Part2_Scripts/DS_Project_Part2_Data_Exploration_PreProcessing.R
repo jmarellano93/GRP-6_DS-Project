@@ -154,70 +154,124 @@ process_credit_data <- function(df) {
     df_clean$ID <- NULL
   }
   
-  # 2. Handling DAYS_EMPLOYED Anomalies (The 'Pensioner' Sentinel Value)
-  cat("Handling 'DAYS_EMPLOYED' anomalies...\n")
-  df_clean$IS_RETIRED <- ifelse(df_clean$DAYS_EMPLOYED == 365243, 1, 0)
-  df_clean$DAYS_EMPLOYED <- ifelse(df_clean$DAYS_EMPLOYED == 365243, 0, df_clean$DAYS_EMPLOYED)
+  # 2. Standardize flag variables (Y/N and numeric) to 0/1 -----------------
+  cat("Standardizing flag variables to numeric 0/1...\n")
   
-  # 3. Feature Engineering: Age from DAYS_BIRTH
+  yn_flags <- intersect(c("FLAG_OWN_CAR", "FLAG_OWN_REALTY"), names(df_clean))
+  for (f in yn_flags) {
+    df_clean[[f]] <- ifelse(df_clean[[f]] == "Y", 1L, 0L)
+  }
+  
+  numeric_flags <- intersect(c("FLAG_MOBIL", "FLAG_WORK_PHONE", 
+                               "FLAG_PHONE", "FLAG_EMAIL"),
+                             names(df_clean))
+  for (f in numeric_flags) {
+    df_clean[[f]] <- as.integer(df_clean[[f]] > 0)
+  }
+  
+  # 3. DAYS_EMPLOYED → handle sentinel & convert to years ------------------
+  cat("Handling 'DAYS_EMPLOYED' sentinel and creating EMPLOYMENT_YEARS...\n")
+  
+  if ("DAYS_EMPLOYED" %in% names(df_clean)) {
+    
+    # Retirement sentinel (365243)
+    df_clean$IS_RETIRED <- ifelse(df_clean$DAYS_EMPLOYED == 365243, 1L, 0L)
+    
+    # Replace sentinel with NA temporarily
+    df_clean$DAYS_EMPLOYED[df_clean$DAYS_EMPLOYED == 365243] <- NA
+    
+    # Convert negative days to positive years, pensioners → 0 years
+    df_clean$EMPLOYMENT_YEARS <- ifelse(
+      is.na(df_clean$DAYS_EMPLOYED),
+      0,
+      pmax(0, -df_clean$DAYS_EMPLOYED / 365.25)
+    )
+    
+    # Remove original days column
+    df_clean$DAYS_EMPLOYED <- NULL
+  }
+  
+  # 4. Convert DAYS_BIRTH into AGE in years --------------------------------
   cat("Converting DAYS_BIRTH to AGE...\n")
-  df_clean$AGE <- abs(df_clean$DAYS_BIRTH) / 365.25
-  df_clean$DAYS_BIRTH <- NULL 
+  if ("DAYS_BIRTH" %in% names(df_clean)) {
+    df_clean$AGE <- abs(df_clean$DAYS_BIRTH) / 365.25
+    df_clean$DAYS_BIRTH <- NULL
+  }
   
-  # 4. Log Transform for Income (Normalization, NOT feature creation)
-  cat("Log-Transforming Income...\n")
-  df_clean$AMT_INCOME_TOTAL_LOG <- log1p(df_clean$AMT_INCOME_TOTAL)
-  df_clean$AMT_INCOME_TOTAL <- NULL
+  # 5. Fix inconsistent family sizes --------------------------------------
+  cat("Fixing inconsistent family size (CNT_FAM_MEMBERS < CNT_CHILDREN)...\n")
   
-  # 5. Handling Missing Values (Imputation)
-  cat("Imputing Missing Values...\n")
-  
-  # Numeric Imputation (Median)
-  num_vars <- names(select_if(df_clean, is.numeric))
-  for(var in num_vars) {
-    if(any(is.na(df_clean[[var]]))) {
-      df_clean[[var]][is.na(df_clean[[var]])] <- median(df_clean[[var]], na.rm = TRUE)
+  if (all(c("CNT_CHILDREN", "CNT_FAM_MEMBERS") %in% names(df_clean))) {
+    inconsistent <- df_clean$CNT_FAM_MEMBERS < df_clean$CNT_CHILDREN
+    if (any(inconsistent, na.rm = TRUE)) {
+      cat(" Correcting", sum(inconsistent, na.rm = TRUE), "rows.\n")
+      df_clean$CNT_FAM_MEMBERS[inconsistent] <-
+        df_clean$CNT_CHILDREN[inconsistent] + 1
     }
   }
   
-  # Categorical Imputation (Unknown Token)
-  cat_vars <- names(select_if(df_clean, is.character))
-  for(var in cat_vars) {
-    is_missing <- is.na(df_clean[[var]]) | df_clean[[var]] == "" | df_clean[[var]] == "NA"
-    if(any(is_missing)) {
-      df_clean[[var]][is_missing] <- "Unknown"
+  # 6. Log-transform income ------------------------------------------------
+  cat("Log-transforming AMT_INCOME_TOTAL...\n")
+  if("AMT_INCOME_TOTAL" %in% names(df_clean)) {
+    df_clean$AMT_INCOME_TOTAL_LOG <- log1p(df_clean$AMT_INCOME_TOTAL)
+    df_clean$AMT_INCOME_TOTAL <- NULL
+  }
+  
+  # 7. Impute missing values ----------------------------------------------
+  cat("Imputing missing values (Median for numeric, 'Unknown' for categoricals)...\n")
+  
+  num_vars <- names(dplyr::select_if(df_clean, is.numeric))
+  for (v in num_vars) {
+    if (any(is.na(df_clean[[v]]))) {
+      df_clean[[v]][is.na(df_clean[[v]])] <- median(df_clean[[v]], na.rm = TRUE)
     }
   }
   
-  # 6. Encoding Target Variable (Buffer Zone Strategy)
-  # We drop '1' (30-59 DPD) to create a clear separation between Good and Bad.
-  cat("Standardizing Target 'status'...\n")
-  cat("Dropping Indeterminate Status '1' (30-59 DPD) for cleaner separation...\n")
-  df_clean <- df_clean %>% filter(status!= '1')
+  cat_vars <- names(dplyr::select_if(df_clean, is.character))
+  for (v in cat_vars) {
+    missing_idx <- is.na(df_clean[[v]]) | df_clean[[v]] == "" | df_clean[[v]] == "NA"
+    if (any(missing_idx)) {
+      df_clean[[v]][missing_idx] <- "Unknown"
+    }
+  }
   
-  # Map: 2,3,4,5 -> 1 (Bad); 0,C,X -> 0 (Good)
-  df_clean$TARGET <- ifelse(df_clean$status %in% c('2', '3', '4', '5'), 1, 0)
-  df_clean$status <- NULL
   
-  # 7. Duplicate Removal
-  cat("Removing Duplicates...\n")
-  df_clean <- distinct(df_clean)
+  # 8. Target Engineering (Buffer Zone Strategy) ---------------------------
+  cat("Applying Buffer Zone Strategy for 'status' and creating TARGET...\n")
   
-  # 8. Zero Variance Filter
-  cat("Checking for Zero Variance columns...\n")
-  features <- df_clean %>% select(-TARGET)
-  nzv <- nearZeroVar(features, saveMetrics = TRUE)
-  if(any(nzv$zeroVar)) {
+  if ("status" %in% names(df_clean)) {
+    df_clean$status <- as.character(df_clean$status)
+    
+    # Remove ambiguous 30–59 DPD (status = "1")
+    before <- nrow(df_clean)
+    df_clean <- dplyr::filter(df_clean, status != "1")
+    cat(" Removed", before - nrow(df_clean), "rows with status '1'.\n")
+    
+    df_clean$TARGET <- ifelse(df_clean$status %in% c("2","3","4","5"), 1L, 0L)
+    df_clean$status <- NULL
+  }
+  
+  df_clean$TARGET <- as.integer(df_clean$TARGET)
+  
+  # 9. Remove duplicate records -------------------------------------------
+  cat("Removing duplicate rows...\n")
+  before_dup <- nrow(df_clean)
+  df_clean <- dplyr::distinct(df_clean)
+  cat(" Removed", before_dup - nrow(df_clean), "duplicate rows.\n")
+  
+  
+  # 10. Zero-variance filter ----------------------------------------------
+  cat("Checking for zero-variance columns...\n")
+  features_only <- dplyr::select(df_clean, -TARGET)
+  nzv <- caret::nearZeroVar(features_only, saveMetrics = TRUE)
+  
+  if (any(nzv$zeroVar)) {
     drops <- rownames(nzv)[nzv$zeroVar]
-    cat("DROPPING CONSTANT COLUMNS:", paste(drops, collapse=", "), "\n")
-    df_clean <- df_clean[,!names(df_clean) %in% drops]
+    cat(" Dropping constant columns:", paste(drops, collapse = ", "), "\n")
+    df_clean <- df_clean[, !names(df_clean) %in% drops, drop = FALSE]
   }
   
-  # 9. Export to Global Environment (For manual inspection in RStudio)
-  cat("Exporting 'df_clean' to Global Environment...\n")
-  assign("df_clean", df_clean, envir = .GlobalEnv)
-  
-  cat("\n--- Module 3 Complete ---\n")
+  cat("\n--- Module 3 Complete (Optimized) ---\n")
   return(df_clean)
 }
 
@@ -354,59 +408,106 @@ perform_eda <- function(df_clean) {
   cat("\n--- Module 4 Complete ---\n")
 }
 
+
 # ==============================================================================
-# Module 5: Neural Network Data Preparation (One-Hot + Scaling)
+# Module 5: Neural Network Data Preparation
 # ==============================================================================
 
-prepare_for_nn <- function(df_clean) {
+fit_nn_preprocessing <- function(df_clean, target_var = "TARGET") {
   cat("\n================================================================\n")
-  cat(" MODULE 5: NN PREPARATION (One-Hot Encoding & Scaling)\n")
+  cat(" FIT NN PREPROCESSING (Train-only encoding + scaling)\n")
   cat("================================================================\n")
   
-  # 1. Separation of Target and Features
-  target_var <- "TARGET"
-  Y <- df_clean[[target_var]]
-  X_raw <- df_clean %>% select(-all_of(target_var))
+  y <- df_clean[[target_var]]
+  X <- df_clean %>% dplyr::select(-all_of(target_var))
   
-  # 2. One-Hot Encoding
-  cat("One-Hot Encoding Categorical Variables...\n")
+  # Convert characters to factors for dummyVars
+  char_cols <- names(dplyr::select_if(X, is.character))
+  X[char_cols] <- lapply(X[char_cols], factor)
   
-  # Identify categorical columns and ensure they are factors
-  cat_cols <- names(select_if(X_raw, is.character))
-  X_raw[cat_cols] <- lapply(X_raw[cat_cols], as.factor)
+  # One-hot encoding model
+  cat("Fitting dummyVars model...\n")
+  dummies_model <- caret::dummyVars(" ~ .", data = X, fullRank = FALSE)
+  X_encoded <- predict(dummies_model, newdata = X) %>% as.data.frame()
   
-  # Create Dummy Vars (fullRank=FALSE creates a column for every level)
-  dummies_model <- dummyVars(" ~.", data = X_raw, fullRank = FALSE)
-  X_encoded <- predict(dummies_model, newdata = X_raw) %>% as.data.frame()
+  # Min–Max scaler
+  cat("Fitting Min–Max scaler...\n")
+  scaler <- caret::preProcess(X_encoded, method = "range")
+  X_scaled <- predict(scaler, X_encoded)
   
-  # 3. Train/Test Split (70/30)
-  cat("Splitting Data (70/30)...\n")
-  train_index <- createDataPartition(Y, p = 0.7, list = FALSE)
+  cat("Encoded & scaled feature matrix has", ncol(X_scaled), "columns.\n")
   
-  X_train_raw <- X_encoded[train_index, ]
-  Y_train <- Y[train_index]
-  
-  X_test_raw <- X_encoded[-train_index, ]
-  Y_test <- Y[-train_index]
-  
-  # 4. Min-Max Scaling (Fit on Train ONLY to avoid Leakage)
-  cat("Applying Min-Max Scaling...\n")
-  
-  process_scaler <- preProcess(X_train_raw, method = c("range"))
-  
-  X_train_scaled <- predict(process_scaler, X_train_raw)
-  X_test_scaled <- predict(process_scaler, X_test_raw)
-  
-  # 5. Convert to Matrix for Keras
-  X_train_matrix <- as.matrix(X_train_scaled)
-  X_test_matrix <- as.matrix(X_test_scaled)
-  
-  cat("Train Matrix Shape:", dim(X_train_matrix), "\n")
-  cat("Test Matrix Shape:", dim(X_test_matrix), "\n")
-  
-  return(list(X_train = X_train_matrix, Y_train = Y_train,
-              X_test = X_test_matrix, Y_test = Y_test))
+  return(list(
+    dummies_model = dummies_model,
+    scaler = scaler,
+    feature_names = colnames(X_scaled),
+    target_var = target_var
+  ))
 }
+
+apply_nn_preprocessing <- function(df_clean, preprocessing) {
+  target_var <- preprocessing$target_var
+  
+  y <- df_clean[[target_var]]
+  X <- df_clean %>% dplyr::select(-all_of(target_var))
+  
+  char_cols <- names(dplyr::select_if(X, is.character))
+  X[char_cols] <- lapply(X[char_cols], factor)
+  
+  # One-hot encoding using training dummyVars
+  X_encoded <- predict(preprocessing$dummies_model, newdata = X) %>% as.data.frame()
+  
+  # Add any missing dummy columns
+  missing_cols <- setdiff(preprocessing$feature_names, colnames(X_encoded))
+  if (length(missing_cols) > 0) {
+    for (m in missing_cols) {
+      X_encoded[[m]] <- 0
+    }
+  }
+  
+  # Align column order
+  X_encoded <- X_encoded[, preprocessing$feature_names, drop = FALSE]
+  
+  # Scaling
+  X_scaled <- predict(preprocessing$scaler, X_encoded)
+  
+  return(list(
+    X = as.matrix(X_scaled),
+    Y = as.numeric(y)
+  ))
+}
+
+prepare_for_nn <- function(df_clean, target_var = "TARGET", train_ratio = 0.7) {
+  cat("\n================================================================\n")
+  cat(" MODULE 5: NN PREPARATION (Split + Preprocessing)\n")
+  cat("================================================================\n")
+  
+  set.seed(123)
+  idx_train <- caret::createDataPartition(df_clean[[target_var]], 
+                                          p = train_ratio, list = FALSE)
+  
+  df_train <- df_clean[idx_train, ]
+  df_test  <- df_clean[-idx_train, ]
+  
+  cat("Train rows:", nrow(df_train), "| Test rows:", nrow(df_test), "\n")
+  
+  preprocessing <- fit_nn_preprocessing(df_train, target_var)
+  
+  train_mats <- apply_nn_preprocessing(df_train, preprocessing)
+  test_mats  <- apply_nn_preprocessing(df_test, preprocessing)
+  
+  cat("Train matrix:", dim(train_mats$X), "\n")
+  cat("Test matrix :", dim(test_mats$X), "\n")
+  
+  return(list(
+    X_train = train_mats$X,
+    Y_train = train_mats$Y,
+    X_test  = test_mats$X,
+    Y_test  = test_mats$Y,
+    preprocessing = preprocessing
+  ))
+}
+
 
 # ==============================================================================
 # Module 6: Execution & Reporting

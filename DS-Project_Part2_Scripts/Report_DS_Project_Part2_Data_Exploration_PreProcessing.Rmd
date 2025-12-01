@@ -9,46 +9,139 @@ output:
   pdf_document:
     toc: true
     number_sections: true
+editor_options: 
+  markdown: 
+    wrap: 72
 ---
 
 # 1. The Theoretical Framework of Credit Data Engineering
 
-The transition from traditional logistic regression scorecards to non-linear Neural Network (NN) architectures in credit risk modeling represents a paradigm shift that necessitates a fundamental reimagining of data preprocessing pipelines. For decades, the credit scoring industry has relied on the robustness of the Weight of Evidence (WoE) transformation and Logistic Regression, models that are remarkably forgiving of outliers, monotonic transformations, and missing data. However, the modern exigency to capture non-linear behavioral patterns has driven institutions toward Deep Learning. 
+The transition from traditional logistic regression scorecards to
+non-linear Neural Network (NN) architectures in credit risk modeling
+represents a paradigm shift that necessitates a fundamental reimagining
+of data preprocessing pipelines. For decades, the credit scoring
+industry has relied on the robustness of the Weight of Evidence (WoE)
+transformation and Logistic Regression, models that are remarkably
+forgiving of outliers, monotonic transformations, and missing data.
+However, the modern exigency to capture non-linear behavioral patterns
+has driven institutions toward Deep Learning.
 
-Neural Networks, unlike their linear predecessors, operate on a fundamentally different mathematical substrate; they rely on the geometric properties of the feature space and the efficiency of gradient-based optimization algorithms, such as Stochastic Gradient Descent (SGD) or Adam. Consequently, a data processing script designed for general exploratory analysis is often "chemically unstable" when applied to the rigorous demands of deep learning.
+Neural Networks, unlike their linear predecessors, operate on a
+fundamentally different mathematical substrate; they rely on the
+geometric properties of the feature space and the efficiency of
+gradient-based optimization algorithms, such as Stochastic Gradient
+Descent (SGD) or Adam. Consequently, a data processing script designed
+for general exploratory analysis is often "chemically unstable" when
+applied to the rigorous demands of deep learning.
 
-This report provides an exhaustive technical audit and a comprehensive refactoring strategy for the provided R script. The objective is to elevate the codebase from a functional exploratory tool to a production-grade engineering pipeline capable of preparing `Dataset-part-2.csv` for a Master’s level Neural Network classification task. The analysis is grounded in a forensic examination of the raw data, the visualization artifacts, and the theoretical constraints of credit risk taxonomy as defined by Basel III and modern machine learning theory.
+This report provides an exhaustive technical audit and a comprehensive
+refactoring strategy for the provided R script. The objective is to
+elevate the codebase from a functional exploratory tool to a
+production-grade engineering pipeline capable of preparing
+`Dataset-part-2.csv` for a Master’s level Neural Network classification
+task. The analysis is grounded in a forensic examination of the raw
+data, the visualization artifacts, and the theoretical constraints of
+credit risk taxonomy as defined by Basel III and modern machine learning
+theory.
 
 ## 1.1 The Geometric Imperative of Neural Network Preprocessing
 
-In the context of credit risk, the input feature space is rarely isotropic. Financial datasets are characterized by heterogeneous data types: continuous variables with heavy-tailed distributions (e.g., `AMT_INCOME_TOTAL`) and high-cardinality nominal variables (e.g., `OCCUPATION_TYPE`). When raw data is fed into a Neural Network, the initial weights are typically initialized from a Gaussian distribution with a small variance (e.g., Xavier or He initialization). If the input features have vastly different scales—for instance, AGE ranging from 20 to 70 while `AMT_INCOME_TOTAL` ranges from 20,000 to 1,000,000—the cost function's error surface becomes an elongated valley.
+In the context of credit risk, the input feature space is rarely
+isotropic. Financial datasets are characterized by heterogeneous data
+types: continuous variables with heavy-tailed distributions (e.g.,
+`AMT_INCOME_TOTAL`) and high-cardinality nominal variables (e.g.,
+`OCCUPATION_TYPE`). When raw data is fed into a Neural Network, the
+initial weights are typically initialized from a Gaussian distribution
+with a small variance (e.g., Xavier or He initialization). If the input
+features have vastly different scales—for instance, AGE ranging from 20
+to 70 while `AMT_INCOME_TOTAL` ranges from 20,000 to 1,000,000—the cost
+function's error surface becomes an elongated valley.
 
-This geometric distortion has profound implications for the optimization process. During backpropagation, the gradients with respect to the weights associated with the larger inputs (like income) will be massive, while those for smaller inputs (like age or binary flags) will be minuscule. This phenomenon, known as the "ill-conditioning" of the Hessian matrix, forces the optimizer to oscillate inefficiently across the steep slopes of the valley, drastically slowing down convergence or causing the gradient to explode. The condition number of the Hessian—the ratio of its largest to smallest eigenvalue—becomes pathologically large. An ill-conditioned problem requires an infinitesimally small learning rate to avoid divergence, which in turn makes training impractically slow.
+This geometric distortion has profound implications for the optimization
+process. During backpropagation, the gradients with respect to the
+weights associated with the larger inputs (like income) will be massive,
+while those for smaller inputs (like age or binary flags) will be
+minuscule. This phenomenon, known as the "ill-conditioning" of the
+Hessian matrix, forces the optimizer to oscillate inefficiently across
+the steep slopes of the valley, drastically slowing down convergence or
+causing the gradient to explode. The condition number of the Hessian—the
+ratio of its largest to smallest eigenvalue—becomes pathologically
+large. An ill-conditioned problem requires an infinitesimally small
+learning rate to avoid divergence, which in turn makes training
+impractically slow.
 
-Therefore, the refactoring of the preprocessing script is not merely a matter of "cleaning" data; it is a process of geometric normalization. We must reshape the manifold of the input data into a hypercube, typically bounded by $[0, 1]$ or with a mean of 0 and unit variance, to ensure that the optimization landscape is spherical. This requirement dictates the strict inclusion of Min-Max scaling in Module 5 of the pipeline.
+Therefore, the refactoring of the preprocessing script is not merely a
+matter of "cleaning" data; it is a process of geometric normalization.
+We must reshape the manifold of the input data into a hypercube,
+typically bounded by $[0, 1]$ or with a mean of 0 and unit variance, to
+ensure that the optimization landscape is spherical. This requirement
+dictates the strict inclusion of Min-Max scaling in Module 5 of the
+pipeline.
 
-Furthermore, the concept of manifold distortion is critical when dealing with high-dimensional financial data. Neural networks attempt to learn a manifold hypothesis—that high-dimensional data actually lies on a lower-dimensional manifold embedded within the ambient space. This manifold represents the true underlying structure of creditworthiness. Preprocessing steps that disrupt the topology of this manifold, such as improper imputation or arbitrary scaling, can render the manifold unlearnable. For instance, treating a "Sentinel Value" (like 365243 in `DAYS_EMPLOYED`) as a valid point on the continuous manifold introduces a singularity or discontinuity that deep learning models struggle to approximate with continuous activation functions (like ReLU or Sigmoid). The neural network perceives this not as a category but as an extreme magnitude, skewing the learned geometric representation of the data.
+Furthermore, the concept of manifold distortion is critical when dealing
+with high-dimensional financial data. Neural networks attempt to learn a
+manifold hypothesis—that high-dimensional data actually lies on a
+lower-dimensional manifold embedded within the ambient space. This
+manifold represents the true underlying structure of creditworthiness.
+Preprocessing steps that disrupt the topology of this manifold, such as
+improper imputation or arbitrary scaling, can render the manifold
+unlearnable. For instance, treating a "Sentinel Value" (like 365243 in
+`DAYS_EMPLOYED`) as a valid point on the continuous manifold introduces
+a singularity or discontinuity that deep learning models struggle to
+approximate with continuous activation functions (like ReLU or Sigmoid).
+The neural network perceives this not as a category but as an extreme
+magnitude, skewing the learned geometric representation of the data.
 
 ## 1.2 The Shift from Feature Selection to Representation Learning
 
-Traditional credit scoring relies heavily on manual feature engineering—creating ratios like `INCOME_PER_MEMBER` or `CREDIT_UTILIZATION`—based on domain expertise. This approach, often termed "Credit Scoring 1.0," assumes that the analyst knows the precise interaction terms required to predict default. However, the updated pipeline reflects a shift toward Representation Learning.
+Traditional credit scoring relies heavily on manual feature
+engineering—creating ratios like `INCOME_PER_MEMBER` or
+`CREDIT_UTILIZATION`—based on domain expertise. This approach, often
+termed "Credit Scoring 1.0," assumes that the analyst knows the precise
+interaction terms required to predict default. However, the updated
+pipeline reflects a shift toward Representation Learning.
 
-In the deep learning paradigm, the burden of feature discovery is shifted from the human analyst to the hidden layers of the network. Instead of forcing explicit interaction terms (like income divided by family members), the refactored script focuses on cleaning the raw signals (Log-income, Age) and allowing the Neural Network to learn the non-linear interactions and optimal representations.
+In the deep learning paradigm, the burden of feature discovery is
+shifted from the human analyst to the hidden layers of the network.
+Instead of forcing explicit interaction terms (like income divided by
+family members), the refactored script focuses on cleaning the raw
+signals (Log-income, Age) and allowing the Neural Network to learn the
+non-linear interactions and optimal representations.
 
-This is a crucial distinction in the updated methodology. The original analysis plan considered creating an `INCOME_PER_MEMBER` feature. However, the current `process_credit_data` function eschews this in favor of a pure Log-transformation of the total income. This decision aligns with deep learning theory: provided the network has sufficient depth and width, it can approximate the division function $f(x, y) = x/y$ required to learn affordability, provided the raw inputs ($x$ and $y$) are properly scaled and normalized. Thus, the pipeline prioritizes distributional stability (via Log transformation to handle skew) over manual feature synthesis. The goal is to provide the model with the cleanest possible "raw materials" so it can construct its own high-level abstractions of creditworthiness.
+This is a crucial distinction in the updated methodology. The original
+analysis plan considered creating an `INCOME_PER_MEMBER` feature.
+However, the current `process_credit_data` function eschews this in
+favor of a pure Log-transformation of the total income. This decision
+aligns with deep learning theory: provided the network has sufficient
+depth and width, it can approximate the division function
+$f(x, y) = x/y$ required to learn affordability, provided the raw inputs
+($x$ and $y$) are properly scaled and normalized. Thus, the pipeline
+prioritizes distributional stability (via Log transformation to handle
+skew) over manual feature synthesis. The goal is to provide the model
+with the cleanest possible "raw materials" so it can construct its own
+high-level abstractions of creditworthiness.
 
 # 2. Forensic Data Audit & Diagnostic Exploratory Analysis
 
-Before any code refactoring can occur, we must perform a forensic audit of the raw material—`Dataset-part-2.csv`. This section details the specific anomalies, structural idiosyncrasies, and data quality issues identified in the source file that will drive the logic of the new Module 2 (EDA) and Module 3 (Preprocessing).
+Before any code refactoring can occur, we must perform a forensic audit
+of the raw material—`Dataset-part-2.csv`. This section details the
+specific anomalies, structural idiosyncrasies, and data quality issues
+identified in the source file that will drive the logic of the new
+Module 2 (EDA) and Module 3 (Preprocessing).
 
 ## 2.1 The Forensic Analysis of the Target Variable: Status
 
-The `status` variable serves as the ground truth for our classification task. However, the raw CSV presents this variable in a "dirty" state, mixing numeric delinquency counters with character codes. A direct inspection of the first 50 rows reveals values such as '0', '2', 'X', and 'C'. To engineer a robust target, we must map these codes to a binary outcome that reflects true credit risk.
+The `status` variable serves as the ground truth for our classification
+task. However, the raw CSV presents this variable in a "dirty" state,
+mixing numeric delinquency counters with character codes. A direct
+inspection of the first 50 rows reveals values such as '0', '2', 'X',
+and 'C'. To engineer a robust target, we must map these codes to a
+binary outcome that reflects true credit risk.
 
 **Table 1: Status Code Interpretation and Risk Implication**
 
 | Status Code | Frequency Interpretation | Risk Implication |
-| :--- | :--- | :--- |
+|:-----------------------|:-----------------------|:-----------------------|
 | **C** | Closed / Paid off | Zero Risk (The loan was successfully repaid). |
 | **X** | Inactive / No loan for the month | Indeterminate/Zero Risk (No credit exposure exists). |
 | **0** | 1-29 days past due | Technical Delinquency. While strictly "past due," in vintage analysis, a majority cure without loss. |
@@ -60,529 +153,734 @@ The `status` variable serves as the ground truth for our classification task. Ho
 
 ### Refactoring Decision: The Buffer Zone Strategy and the 60-Day Threshold
 
-The previous script's handling of this mapping was opaque. The refactored pipeline implements a highly specific "Buffer Zone Strategy" defined in Module 3. This strategy explicitly rejects the standard binary mapping in favor of a cleaner separation of classes, diverging from strict regulatory definitions for the sake of modeling efficacy.
+The previous script's handling of this mapping was opaque. The
+refactored pipeline implements a highly specific "Buffer Zone Strategy"
+defined in Module 3. This strategy explicitly rejects the standard
+binary mapping in favor of a cleaner separation of classes, diverging
+from strict regulatory definitions for the sake of modeling efficacy.
 
-**1. The Indeterminate Zone (Status '1'):**
-The script filters out all rows where `status == '1'`.
-*Code:* `df_clean <- df_clean %>% filter(status != '1')`
+**1. The Indeterminate Zone (Status '1'):** The script filters out all
+rows where `status == '1'`. *Code:*
+`df_clean <- df_clean %>% filter(status != '1')`
 
-*Rationale:* Status '1' (30-59 Days Past Due) represents a state of high entropy. A borrower in this bucket is in a superposition of "Good" and "Bad." Many will cure (return to '0') after a simple reminder, while others are on a deterministic path to default. In credit risk modeling, this is often referred to as the "Indeterminate" or "Roll Rate" zone. Including these observations creates "label noise." If we label them "Bad," we introduce false positives (borrowers who would have paid). If we label them "Good," we introduce false negatives (borrowers already in financial collapse). By excising this buffer zone, we force the Neural Network to learn the decision boundary between clearly performing loans ('0', 'C', 'X') and clearly distressed loans ('2' through '5').
+*Rationale:* Status '1' (30-59 Days Past Due) represents a state of high
+entropy. A borrower in this bucket is in a superposition of "Good" and
+"Bad." Many will cure (return to '0') after a simple reminder, while
+others are on a deterministic path to default. In credit risk modeling,
+this is often referred to as the "Indeterminate" or "Roll Rate" zone.
+Including these observations creates "label noise." If we label them
+"Bad," we introduce false positives (borrowers who would have paid). If
+we label them "Good," we introduce false negatives (borrowers already in
+financial collapse). By excising this buffer zone, we force the Neural
+Network to learn the decision boundary between clearly performing loans
+('0', 'C', 'X') and clearly distressed loans ('2' through '5').
 
-**2. The Redefinition of Default (60+ DPD):**
-The pipeline maps statuses '2', '3', '4', and '5' to the positive class (Target = 1).
-*Definition:* Target = 1 if $status \in \{'2', '3', '4', '5'\}$
-*Definition:* Target = 0 if $status \in \{'0', 'C', 'X'\}$
+**2. The Redefinition of Default (60+ DPD):** The pipeline maps statuses
+'2', '3', '4', and '5' to the positive class (Target = 1). *Definition:*
+Target = 1 if $status \in \{'2', '3', '4', '5'\}$ *Definition:* Target =
+0 if $status \in \{'0', 'C', 'X'\}$
 
-*Analysis:* This defines the "Bad" event as 60+ Days Past Due. This contrasts with the strict Basel III definition, which typically sets the default threshold at 90 Days Past Due. Under Basel III (Article 178 of the CRR), a default is recognized when the obligor is past due more than 90 days on any material credit obligation.
+*Analysis:* This defines the "Bad" event as 60+ Days Past Due. This
+contrasts with the strict Basel III definition, which typically sets the
+default threshold at 90 Days Past Due. Under Basel III (Article 178 of
+the CRR), a default is recognized when the obligor is past due more than
+90 days on any material credit obligation.
 
 However, for the purpose of this predictive model, the 60-day threshold is strategically superior for several reasons:
-* **Early Warning Signal:** By triggering the default flag at 60 days, the model functions as an Early Warning System (EWS). In high-risk or subprime portfolios, the "roll rate" from 60 to 90 DPD is often extremely high—once a borrower misses two full payments, the likelihood of self-cure drops precipitously.
-* **Class Imbalance Mitigation:** Default is a rare event. Waiting for 90 DPD (Status '3') would drastically reduce the count of positive samples, exacerbating the class imbalance problem known as the Accuracy Paradox. By widening the definition to include 60-89 DPD, we increase the support for the minority class, providing the Neural Network with more examples of financial distress to learn from.
-* **Regulatory Discretion:** While 90 days is the standard backstop, regulatory frameworks like the PRA Rulebook and EBA guidelines allow for tighter definitions (e.g., 60 days) in specific high-risk segments or for internal monitoring purposes. The "Buffer Zone" strategy effectively creates a model optimized for risk sensitivity rather than strict regulatory reporting.
+
+* **Early Warning Signal:** By triggering the default flag at 60 days, the model functions as an Early Warning System (EWS). In high-risk or subprime portfolios, the roll rate from 60 to 90 DPD is extremely high.
+* **Class Imbalance Mitigation:** Default is a rare event. The 60 DPD threshold increases the number of positive samples, improving model learnability.
+* **Regulatory Discretion:** Several supervisory frameworks allow earlier classification for internal risk monitoring.
+
 
 ## 2.2 The "Pensioner Anomaly" and Sentinel Values
 
-A forensic scan of the `DAYS_EMPLOYED` variable reveals a structural anomaly that threatens the integrity of any numeric-based model. Standard employment data consists of negative integers (representing days back from the application date). However, the dataset contains a massive, discontinuous spike at the positive integer value 365243.
+A forensic scan of the `DAYS_EMPLOYED` variable reveals a structural anomaly that threatens the integrity of any numeric-based model. Standard employment data consists of negative integers (representing days back from the observation date). However, the dataset contains a massive, discontinuous spike at the positive integer value 365243.
 
-* **Empirical Evidence:** Row 6449070 (ID) shows `CODE_GENDER = 'M'`, `NAME_INCOME_TYPE = 'Pensioner'`, and `DAYS_EMPLOYED = 365243`.
-* **Theoretical Implication:** The value 365,243 corresponds to exactly 1,000 years ($365.2425 \times 1000$). This is a "sentinel value" or "magic number" used in legacy mainframe banking systems to signify "Not Applicable". If this variable is fed raw into a Neural Network, the massive magnitude of 365,243 compared to the typical range of employed days (e.g., -10,000 to 0) will act as a lever. During the dot-product operations in the first hidden layer ($z = Wx + b$), the weight associated with `DAYS_EMPLOYED` will be forced to be infinitesimally small to compensate for the massive input value, effectively killing the gradient signal for valid employment data. Furthermore, it violates the Manifold Hypothesis by placing retired individuals at a massive Euclidean distance from employed individuals, creating a topological rupture that is hard to learn.
+The value 365,243 corresponds to approximately 1,000 years. This is a classic "sentinel value" or "magic number" used in legacy banking systems to signify “not applicable” rather than an actual duration. If this value is passed directly into a Neural Network, its magnitude, compared to the typical range of `DAYS_EMPLOYED` (e.g. -10,000 to 0), will dominate dot products in the first hidden layer and severely distort the learned representation of employment history.
 
-**Refactoring Strategy:** The refactored script performs a "Surgical Separation" in Module 3:
-* **Extraction:** Create a new boolean feature `IS_RETIRED`. IF `DAYS_EMPLOYED == 365243` THEN 1 ELSE 0. This explicitly encodes the information that the applicant is a pensioner, allowing the model to learn a specific bias for this group.
-* **Imputation:** Replace the sentinel value 365,243 in `DAYS_EMPLOYED` with 0. This creates a continuous numeric scale where 0 represents "unemployed/retired" and negative numbers represent tenure. This restoration of continuity is essential for preserving the geometric integrity of the input manifold.
+**Refactoring Strategy:** The refactored script performs a “surgical separation” of this sentinel value in Module 3:
+
+* **Extraction:** Create a new boolean feature `IS_RETIRED`. IF `DAYS_EMPLOYED == 365243` THEN `IS_RETIRED = 1` ELSE `0`. This explicitly encodes the fact that the applicant is a pensioner.
+* **Transformation to Years:** Temporarily replace the sentinel with `NA` and construct a new numeric feature `EMPLOYMENT_YEARS`. For regular employees, this is defined as the absolute number of employment days divided by 365.25, i.e. `max(0, -DAYS_EMPLOYED / 365.25)`. For pensioners (where the original value was 365243), `EMPLOYMENT_YEARS` is set to 0, with the retirement information carried by `IS_RETIRED`.
+* **Column Removal:** Drop the original `DAYS_EMPLOYED` column.
+
+This transformation removes the extreme outlier from the feature space, places employment history onto an intuitive “years of work” scale, and preserves the relevant retirement signal in a separate, well-behaved indicator.
+
 
 ## 2.3 The Zero-Variance Trap
 
-The snippet analysis identifies that certain variables (like `FLAG_MOBIL`) may possess only a single unique value across the entire filtered dataset.
+The snippet analysis identifies that certain variables (like
+`FLAG_MOBIL`) may possess only a single unique value across the entire
+filtered dataset.
 
-* **Theoretical Implication:** A variable with zero variance has an entropy of zero ($H(X) = 0$). It carries zero Information Value (IV) and creates linear dependence (multicollinearity) in the design matrix. In Linear Algebra terms, if a column in the design matrix $X$ is constant, the matrix $X^TX$ becomes singular (non-invertible), causing analytical solutions to fail. In the context of Neural Networks, while not strictly fatal to backpropagation, these features result in "dead weights" that consume computational resources without contributing to loss reduction. Furthermore, single-level factors cause the contrasts function to fail during One-Hot Encoding, leading to pipeline crashes.
+-   **Theoretical Implication:** A variable with zero variance has an
+    entropy of zero ($H(X) = 0$). It carries zero Information Value (IV)
+    and creates linear dependence (multicollinearity) in the design
+    matrix. In Linear Algebra terms, if a column in the design matrix
+    $X$ is constant, the matrix $X^TX$ becomes singular
+    (non-invertible), causing analytical solutions to fail. In the
+    context of Neural Networks, while not strictly fatal to
+    backpropagation, these features result in "dead weights" that
+    consume computational resources without contributing to loss
+    reduction. Furthermore, single-level factors cause the contrasts
+    function to fail during One-Hot Encoding, leading to pipeline
+    crashes.
 
-**Refactoring Strategy:** Module 3 (Preprocessing) strictly implements `caret::nearZeroVar`.
-* *Code:* `nzv <- nearZeroVar(features, saveMetrics = TRUE)`
-* *Logic:* The script programmatically identifies and drops these columns before they reach the encoding stage. This is a preventative measure against "chemical instability" in the matrix operations of Module 5.
+**Refactoring Strategy:** Module 3 (Preprocessing) strictly implements
+`caret::nearZeroVar`. \* *Code:*
+`nzv <- nearZeroVar(features, saveMetrics = TRUE)` \* *Logic:* The
+script programmatically identifies and drops these columns before they
+reach the encoding stage. This is a preventative measure against
+"chemical instability" in the matrix operations of Module 5.
 
 ## 2.4 Missing Data Handling: The "Unknown" Token Strategy
 
-Neural Networks require complete data matrices; they cannot inherently handle NA values. The previous report methodology suggested Mode imputation for categorical variables. However, the updated script implements a more robust strategy for categorical data, acknowledging that missingness in credit data is rarely random.
+Neural Networks require complete data matrices; they cannot inherently
+handle NA values. The previous report methodology suggested Mode
+imputation for categorical variables. However, the updated script
+implements a more robust strategy for categorical data, acknowledging
+that missingness in credit data is rarely random.
 
-**Refactoring Strategy:**
-* **Numeric Variables:** Impute using the Median. This is robust to the heavy skew observed in financial variables like Income, where the Mean is often pulled upwards by high-net-worth outliers.
-* **Categorical Variables:** Instead of Mode imputation, the script explicitly imputes missing values with the token "Unknown".
+**Refactoring Strategy:** \* **Numeric Variables:** Impute using the
+Median. This is robust to the heavy skew observed in financial variables
+like Income, where the Mean is often pulled upwards by high-net-worth
+outliers. \* **Categorical Variables:** Instead of Mode imputation, the
+script explicitly imputes missing values with the token "Unknown".
 
-*Rationale:* Mode imputation rests on the assumption that data is Missing At Random (MAR). In credit risk, missingness is often informative (Missing Not At Random - MNAR). For example, an applicant might leave `OCCUPATION_TYPE` blank because they are unemployed or working in an informal sector. Forcing the Mode (e.g., "Laborer") falsifies the data record and introduces bias. By creating an explicit "Unknown" category, the Neural Network can learn a specific weight for this "missingness" state via One-Hot Encoding. This effectively treats the lack of information as a predictor in itself, preserving the signal inherent in the omission.
+*Rationale:* Mode imputation rests on the assumption that data is
+Missing At Random (MAR). In credit risk, missingness is often
+informative (Missing Not At Random - MNAR). For example, an applicant
+might leave `OCCUPATION_TYPE` blank because they are unemployed or
+working in an informal sector. Forcing the Mode (e.g., "Laborer")
+falsifies the data record and introduces bias. By creating an explicit
+"Unknown" category, the Neural Network can learn a specific weight for
+this "missingness" state via One-Hot Encoding. This effectively treats
+the lack of information as a predictor in itself, preserving the signal
+inherent in the omission.
 
 # 3. Refactoring Strategy & Architecture
 
-The refactoring strategy adopts a Modular Architecture comprising four distinct phases, enforcing "Separation of Concerns." This architecture ensures that the pipeline is not just a linear script but a set of independent, testable components.
+The refactoring strategy adopts a Modular Architecture comprising four
+distinct phases, enforcing "Separation of Concerns." This architecture
+ensures that the pipeline is not just a linear script but a set of
+independent, testable components.
 
 ## 3.1 Phase 1: Environment Setup and Artifact Management
-The new pipeline utilizes a strictly defined environment setup function. A key innovation is Automated Artifact Management: the script implements a dynamic directory creation logic based on the current system timestamp to save PDF reports (`Autogenerated_Plots...pdf`). This ensures an audit trail, a critical requirement in regulated financial environments where model provenance must be traceable.
+
+The new pipeline utilizes a strictly defined environment setup function.
+A key innovation is Automated Artifact Management: the script implements
+a dynamic directory creation logic based on the current system timestamp
+to save PDF reports (`Autogenerated_Plots...pdf`). This ensures an audit
+trail, a critical requirement in regulated financial environments where
+model provenance must be traceable.
 
 ## 3.2 Phase 2: The Diagnostic EDA Engine
-Module 2 has been refactored from a passive "print summary" script to an active "Diagnostic Engine". It performs a rigorous check of structure, quality (missingness, duplicates), and visualization (histograms and boxplots) on the raw data. This serves as the "Pre-Flight Check" to ensure the raw ingredients are viable before processing. It visualizes the class imbalance before filtering, giving the analyst a baseline for the "Accuracy Paradox" risks discussed later.
+
+Module 2 has been refactored from a passive "print summary" script to an
+active "Diagnostic Engine". It performs a rigorous check of structure,
+quality (missingness, duplicates), and visualization (histograms and
+boxplots) on the raw data. This serves as the "Pre-Flight Check" to
+ensure the raw ingredients are viable before processing. It visualizes
+the class imbalance before filtering, giving the analyst a baseline for
+the "Accuracy Paradox" risks discussed later.
 
 ## 3.3 Phase 3: The Advanced Feature Engineering Core
-This module executes the mathematical transformations required to stabilize the dataset:
-* **Anomaly Remediation:** Handling the `DAYS_EMPLOYED` sentinel value and extracting `IS_RETIRED`.
-* **Feature Creation (AGE):** Explicitly converting `DAYS_BIRTH` (which is negative) into a positive AGE feature (`abs(DAYS_BIRTH) / 365.25`). This improves model interpretability, as positive age correlates intuitively with credit maturity.
-* **Distributional Normalization (Income):** Instead of the ratio `INCOME_PER_MEMBER`, the script applies a Log-transformation: `AMT_INCOME_TOTAL_LOG <- log1p(AMT_INCOME_TOTAL)`. This compresses the heavy tail of the income distribution, reducing the leverage of outliers and making the distribution more Gaussian, which aids the convergence of gradient descent.
-* **Buffer Zone Filtering:** Executing the drop of status == '1' and mapping the remaining statuses to a binary Target.
-* **Zero Variance Filtering:** Programmatically dropping columns with near-zero variance using `caret::nearZeroVar`.
+
+This module executes the mathematical transformations required to
+stabilize the dataset: * **Anomaly Remediation and Employment Features:** Handling the `DAYS_EMPLOYED`
+  sentinel value and extracting `IS_RETIRED`, then converting valid employment 
+  durations into a positive `EMPLOYMENT_YEARS` feature (in years) and dropping 
+  the original days-based column.
+**Feature
+Creation (AGE):** Explicitly converting `DAYS_BIRTH` (which is negative)
+into a positive AGE feature (`abs(DAYS_BIRTH) / 365.25`). This improves
+model interpretability, as positive age correlates intuitively with
+credit maturity. \* **Distributional Normalization (Income):** Instead
+of the ratio `INCOME_PER_MEMBER`, the script applies a
+Log-transformation: `AMT_INCOME_TOTAL_LOG <- log1p(AMT_INCOME_TOTAL)`.
+This compresses the heavy tail of the income distribution, reducing the
+leverage of outliers and making the distribution more Gaussian, which
+aids the convergence of gradient descent. \* **Buffer Zone Filtering:**
+Executing the drop of status == '1' and mapping the remaining statuses
+to a binary Target. \* **Zero Variance Filtering:** Programmatically
+dropping columns with near-zero variance using `caret::nearZeroVar`.
 
 ## 3.4 Phase 4: Neural Network Readiness (Module 5)
-Phase 5 implements the rigorous normalization protocol required for the "Geometric Normalization" discussed in Section 1.1.
-* **One-Hot Encoding:** Categorical variables are exploded into binary dummy vectors. This creates an orthogonal representation where the Hamming distance between any two categories is identical. This is crucial for NNs, as opposed to Label Encoding, which introduces false ordinality (e.g., assuming Laborer (1) < Manager (2) < Driver (3)).
-* **Min-Max Scaling:** A strict mapping of all continuous features to $[0, 1]$ is applied. This ensures that the input manifold is bounded within a unit hypercube, preventing the "ill-conditioning" of the Hessian matrix during training.
 
-**A Note on Data Leakage:**
-It is critical to note that the provided script applies scaling to the entire dataset before splitting into Train/Test sets. In a rigorous production environment, this constitutes Data Leakage. The scaling parameters (min, max) should ideally be derived solely from the training set and applied to the test set. However, for the scope of this preprocessing audit (which outputs a single matrix for downstream modeling), this step stabilizes the matrix. A production refactor would move the preProcess step inside the cross-validation loop.
+Phase 5 implements the rigorous normalization protocol required for the
+"Geometric Normalization" discussed in Section 1.1. \* **One-Hot
+Encoding:** Categorical variables are exploded into binary dummy
+vectors. This creates an orthogonal representation where the Hamming
+distance between any two categories is identical. This is crucial for
+NNs, as opposed to Label Encoding, which introduces false ordinality
+(e.g., assuming Laborer (1) \< Manager (2) \< Driver (3)). \* **Min-Max
+Scaling:** A strict mapping of all continuous features to $[0, 1]$ is
+applied. This ensures that the input manifold is bounded within a unit
+hypercube, preventing the "ill-conditioning" of the Hessian matrix
+during training.
+
+**A Note on Data Leakage:** It is critical to note that the provided
+script applies scaling to the entire dataset before splitting into
+Train/Test sets. In a rigorous production environment, this constitutes
+Data Leakage. The scaling parameters (min, max) should ideally be
+derived solely from the training set and applied to the test set.
+However, for the scope of this preprocessing audit (which outputs a
+single matrix for downstream modeling), this step stabilizes the matrix.
+A production refactor would move the preProcess step inside the
+cross-validation loop.
 
 # 4. Refactored Codebase: DS_Project_Part2_Data_Exploration_PreProcessing.R
 
-The following R script represents the culmination of the audit. It accurately reflects the current state of the methodology, including the Buffer Zone strategy, the Log-Income transformation, and the "Unknown" imputation logic.
+The following R script represents the culmination of the audit. It
+accurately reflects the current state of the methodology, including the
+Buffer Zone strategy, the Log-Income transformation, and the "Unknown"
+imputation logic.
 
 ```r
-# ==============================================================================
-# SCRIPT: Credit Risk Data Exploration & Preprocessing (Part 2)
-# AUTHOR:
-# REVIEWER: Senior Data Science Mentor
-# PURPOSE: To audit, clean, and transform raw credit data into a Neural Network-ready format.
-#          Includes robust EDA, justification for cleaning steps, and automated reporting.
-# ==============================================================================
+
+\# SCRIPT: Credit Risk Data Exploration & Preprocessing (Part 2) \#
+AUTHOR: \# REVIEWER: Senior Data Science Mentor \# PURPOSE: To audit,
+clean, and transform raw credit data into a Neural Network-ready format.
+\# Includes robust EDA, justification for cleaning steps, and automated
+reporting. \#
+==============================================================================
 
 # ==============================================================================
+
 # Module 1: Environment Setup
+
 # ==============================================================================
 
 # --- Package Installation Logic ---
-installed_pkgs <- installed.packages()[, "Package"]
-req_pkgs <- c("tidyverse", "caret", "reshape2", "corrplot", "vcd", "naniar", "gridExtra", "e1071")
-new_pkgs <- req_pkgs[!(req_pkgs %in% installed_pkgs)]
-if(length(new_pkgs)) install.packages(new_pkgs)
+
+installed_pkgs \<- installed.packages()[, "Package"] req_pkgs \<-
+c("tidyverse", "caret", "reshape2", "corrplot", "vcd", "naniar",
+"gridExtra", "e1071") new_pkgs \<- req_pkgs[!(req_pkgs %in%
+installed_pkgs)] if(length(new_pkgs)) install.packages(new_pkgs)
 
 # --- Load Libraries ---
-library(tidyverse)  # Data manipulation & ggplot2
-library(caret)      # ML Preprocessing & Dummy Variables
-library(reshape2)   # Reshaping for correlation heatmaps
-library(corrplot)   # Correlation Viz
-library(vcd)        # Categorical Statistics (Cramer's V)
-library(naniar)     # Missing Data Visualization
-library(gridExtra)  # arranging plots
-library(e1071)      # Skewness calculations
+
+library(tidyverse) \# Data manipulation & ggplot2 library(caret) \# ML
+Preprocessing & Dummy Variables library(reshape2) \# Reshaping for
+correlation heatmaps library(corrplot) \# Correlation Viz library(vcd)
+\# Categorical Statistics (Cramer's V) library(naniar) \# Missing Data
+Visualization library(gridExtra) \# arranging plots library(e1071) \#
+Skewness calculations
 
 # Ensure reproducibility
+
 set.seed(123)
 
 # --- Data Loading Function ---
-load_data <- function(path) {
-  if(!file.exists(path)) stop(paste("File not found at:", path))
-  
-  # Strings as factors = FALSE initially to facilitate inspection
-  df <- read.csv(path, stringsAsFactors = FALSE)
-  
-  cat("--------------------------------------------------------\n")
-  cat(" DATA LOADED SUCCESSFULLY \n")
-  cat(" Dimensions:", dim(df), "rows,", dim(df), "columns\n")
-  cat("--------------------------------------------------------\n")
-  return(df)
-}
+
+load_data \<- function(path) { if(!file.exists(path)) stop(paste("File
+not found at:", path))
+
+\# Strings as factors = FALSE initially to facilitate inspection df \<-
+read.csv(path, stringsAsFactors = FALSE)
+
+cat("--------------------------------------------------------\n") cat("
+DATA LOADED SUCCESSFULLY \n") cat(" Dimensions:", dim(df), "rows,",
+dim(df), "columns\n")
+cat("--------------------------------------------------------\n")
+return(df) }
 
 # ==============================================================================
+
 # Module 2: Initial Exploratory Data Analysis (EDA)
+
 # ==============================================================================
-# JUSTIFICATION: 
+
+# JUSTIFICATION:
+
 # Before any cleaning, we must understand the raw data structure to identify:
+
 # 1. Wrong data types (categorical read as numeric).
+
 # 2. Outliers (impossible ages, employment years).
+
 # 3. Missingness patterns (random vs. structural).
+
 # This informs the strategy in Module 3.
 
-perform_initial_eda <- function(df) {
-  cat("\n================================================================\n")
-  cat(" MODULE 2: INITIAL DATA EXPLORATION (RAW DATA)\n")
-  cat("================================================================\n")
-  
-  # --- Phase 1: Structure & Content Inspection ---
-  cat("\n[Phase 1] Structure & Content Inspection\n")
-  
-  # 1. Head/Tail Check
-  cat("First 5 rows:\n")
-  print(head(df, 5))
-  
-  # 2. Dimension Check
-  cat("\nDimensions:\n")
-  print(dim(df))
-  
-  # 3. Structure Check
-  cat("\nData Structure (glimpse):\n")
-  dplyr::glimpse(df)
-  
-  # --- Phase 2: Data Quality "Sanity Checks" ---
-  cat("\n[Phase 2] Data Quality & Sanity Checks\n")
-  
-  # 1. Statistical Summary
-  cat("\nStatistical Summary of Numeric Columns:\n")
-  print(summary(select_if(df, is.numeric)))
-  
-  # 2. Missing Values
-  cat("\nMissing Values Count:\n")
-  miss_counts <- colSums(is.na(df))
-  print(miss_counts[miss_counts > 0])
-  # Visualizing Missingness
-  print(naniar::vis_miss(df, warn_large_data = FALSE) + 
-          ggtitle("Missingness Map (Raw Data)"))
-  
-  # 3. Duplicate Rows
-  dup_count <- sum(duplicated(df))
-  cat("\nDuplicate Rows Detected:", dup_count, "\n")
-  # JUSTIFICATION: Duplicates in credit data usually indicate data entry errors 
-  # or system glitches, as ID should be unique.
+perform_initial_eda \<- function(df) {
+cat("\n================================================================\n")
+cat(" MODULE 2: INITIAL DATA EXPLORATION (RAW DATA)\n")
+cat("================================================================\n")
 
-  # 4. Unique Value Counts for Categorical
-  cat("\nUnique Values in Categorical Variables (Cardinality Check):\n")
-  cat_cols <- names(select_if(df, is.character))
-  for(col in cat_cols) {
-    cat(paste0(col, ": ", length(unique(df[[col]])), " unique levels\n"))
-  }
-  
-  # --- Phase 3: Univariate Visualization ---
-  cat("\n[Phase 3] Univariate Visualization\n")
-  
-  # 1. Target Variable Distribution (The most important check)
-  p_target <- ggplot(df, aes(x = as.factor(status))) +
-    geom_bar(fill = "steelblue") +
-    labs(title = "Target Distribution (Class Imbalance Check)", x = "Status", y = "Count") +
-    theme_minimal()
-  print(p_target)
-  
-  # 2. Numeric Distributions (Histograms & Boxplots)
-  num_cols <- names(select_if(df, is.numeric))
-  # Exclude ID from plotting
-  num_cols <- num_cols
-  
-  for(col in num_cols) {
-    # Histogram
-    p_hist <- ggplot(df, aes_string(x = col)) +
-      geom_histogram(bins = 30, fill = "coral", color = "white") +
-      labs(title = paste("Distribution:", col)) +
-      theme_minimal()
-    
-    # Boxplot
-    p_box <- ggplot(df, aes_string(y = col)) +
-      geom_boxplot(fill = "lightblue") +
-      labs(title = paste("Outliers:", col)) +
-      theme_minimal()
-    
-    grid.arrange(p_hist, p_box, ncol = 2)
-  }
-  
-  # 3. Categorical Frequencies
-  for(col in cat_cols) {
-    p_cat <- ggplot(df, aes_string(x = col)) +
-      geom_bar(fill = "darkseagreen") +
-      coord_flip() + # Flip for readability of labels
-      labs(title = paste("Frequency:", col)) +
-      theme_minimal()
-    print(p_cat)
-  }
-  
-  cat("\n--- Module 2 Complete ---\n")
+\# --- Phase 1: Structure & Content Inspection ---
+cat("\n[Phase 1]Structure & Content Inspection\n")
+
+\# 1. Head/Tail Check cat("First 5 rows:\n") print(head(df, 5))
+
+\# 2. Dimension Check cat("\nDimensions:\n") print(dim(df))
+
+\# 3. Structure Check cat("\nData Structure (glimpse):\n")
+dplyr::glimpse(df)
+
+\# --- Phase 2: Data Quality "Sanity Checks" --- cat("\n[Phase 2] Data
+Quality & Sanity Checks\n")
+
+\# 1. Statistical Summary cat("\nStatistical Summary of Numeric
+Columns:\n") print(summary(select_if(df, is.numeric)))
+
+\# 2. Missing Values cat("\nMissing Values Count:\n") miss_counts \<-
+colSums(is.na(df)) print(miss_counts[miss_counts \> 0]) \# Visualizing
+Missingness print(naniar::vis_miss(df, warn_large_data = FALSE) +
+ggtitle("Missingness Map (Raw Data)"))
+
+\# 3. Duplicate Rows dup_count \<- sum(duplicated(df)) cat("\nDuplicate
+Rows Detected:", dup_count, "\n") \# JUSTIFICATION: Duplicates in credit
+data usually indicate data entry errors \# or system glitches, as ID
+should be unique.
+
+\# 4. Unique Value Counts for Categorical cat("\nUnique Values in
+Categorical Variables (Cardinality Check):\n") cat_cols \<-
+names(select_if(df, is.character)) for(col in cat_cols) {
+cat(paste0(col, ": ", length(unique(df[[col]])), " unique levels\n")) }
+
+\# --- Phase 3: Univariate Visualization --- cat("\n[Phase 3] Univariate
+Visualization\n")
+
+\# 1. Target Variable Distribution (The most important check) p_target
+\<- ggplot(df, aes(x = as.factor(status))) + geom_bar(fill =
+"steelblue") + labs(title = "Target Distribution (Class Imbalance
+Check)", x = "Status", y = "Count") + theme_minimal() print(p_target)
+
+\# 2. Numeric Distributions (Histograms & Boxplots) num_cols \<-
+names(select_if(df, is.numeric)) \# Exclude ID from plotting num_cols
+\<- num_cols
+
+for(col in num_cols) { \# Histogram p_hist \<- ggplot(df, aes_string(x =
+col)) + geom_histogram(bins = 30, fill = "coral", color = "white") +
+labs(title = paste("Distribution:", col)) + theme_minimal()
+
+```         
+# Boxplot
+p_box <- ggplot(df, aes_string(y = col)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(title = paste("Outliers:", col)) +
+  theme_minimal()
+
+grid.arrange(p_hist, p_box, ncol = 2)
+```
+
 }
 
+\# 3. Categorical Frequencies for(col in cat_cols) { p_cat \<-
+ggplot(df, aes_string(x = col)) + geom_bar(fill = "darkseagreen") +
+coord_flip() + \# Flip for readability of labels labs(title =
+paste("Frequency:", col)) + theme_minimal() print(p_cat) }
+
+cat("\n--- Module 2 Complete ---\n") }
+
 # ==============================================================================
+
 # Module 3: Advanced Feature Engineering & Cleaning
+
 # ==============================================================================
 
 process_credit_data <- function(df) {
   cat("\n================================================================\n")
-  cat(" MODULE 3: DATA CLEANING & FEATURE ENGINEERING\n")
+  cat(" MODULE 3: DATA CLEANING & FEATURE ENGINEERING (OPTIMIZED)\n")
   cat("================================================================\n")
   
   df_clean <- df
   
-  # 1. ID Removal
-  # JUSTIFICATION: 'ID' is a primary key. It has high cardinality and no predictive power.
+  # 1. Remove ID column ----------------------------------------------------
   if("ID" %in% names(df_clean)) {
     cat("Dropping 'ID' column...\n")
     df_clean$ID <- NULL
   }
   
-  # 2. Handling DAYS_EMPLOYED Anomalies (Sentinel Value)
-  # EDA FINDING: 365243 denotes 'Pensioner/Unemployed'.
-  # ACTION: Create flag, then impute to 0.
-  cat("Handling 'DAYS_EMPLOYED' anomalies...\n")
-  df_clean$IS_RETIRED <- ifelse(df_clean$DAYS_EMPLOYED == 365243, 1, 0)
-  df_clean$DAYS_EMPLOYED <- ifelse(df_clean$DAYS_EMPLOYED == 365243, 0, df_clean$DAYS_EMPLOYED)
+  # 2. Standardize flag variables (Y/N and numeric) to 0/1 -----------------
+  cat("Standardizing flag variables to numeric 0/1...\n")
   
-  # 3. Feature Engineering: Age from DAYS_BIRTH
-  # JUSTIFICATION: Positive magnitude is required for NN interpretation.
+  yn_flags <- intersect(c("FLAG_OWN_CAR", "FLAG_OWN_REALTY"), names(df_clean))
+  for (f in yn_flags) {
+    df_clean[[f]] <- ifelse(df_clean[[f]] == "Y", 1L, 0L)
+  }
+  
+  numeric_flags <- intersect(c("FLAG_MOBIL", "FLAG_WORK_PHONE", 
+                               "FLAG_PHONE", "FLAG_EMAIL"),
+                             names(df_clean))
+  for (f in numeric_flags) {
+    df_clean[[f]] <- as.integer(df_clean[[f]] > 0)
+  }
+  
+  # 3. DAYS_EMPLOYED → handle sentinel & convert to years ------------------
+  cat("Handling 'DAYS_EMPLOYED' sentinel and creating EMPLOYMENT_YEARS...\n")
+  
+  if ("DAYS_EMPLOYED" %in% names(df_clean)) {
+    
+    # Retirement sentinel (365243)
+    df_clean$IS_RETIRED <- ifelse(df_clean$DAYS_EMPLOYED == 365243, 1L, 0L)
+    
+    # Replace sentinel with NA temporarily
+    df_clean$DAYS_EMPLOYED[df_clean$DAYS_EMPLOYED == 365243] <- NA
+    
+    # Convert negative days to positive years, pensioners → 0 years
+    df_clean$EMPLOYMENT_YEARS <- ifelse(
+      is.na(df_clean$DAYS_EMPLOYED),
+      0,
+      pmax(0, -df_clean$DAYS_EMPLOYED / 365.25)
+    )
+    
+    # Remove original days column
+    df_clean$DAYS_EMPLOYED <- NULL
+  }
+  
+  # 4. Convert DAYS_BIRTH into AGE in years --------------------------------
   cat("Converting DAYS_BIRTH to AGE...\n")
-  df_clean$AGE <- abs(df_clean$DAYS_BIRTH) / 365.25
-  df_clean$DAYS_BIRTH <- NULL # Remove original
+  if ("DAYS_BIRTH" %in% names(df_clean)) {
+    df_clean$AGE <- abs(df_clean$DAYS_BIRTH) / 365.25
+    df_clean$DAYS_BIRTH <- NULL
+  }
   
-  # 4. Log Transformation of Income (Normalization)
-  # JUSTIFICATION: Compressing the heavy tail of income distribution.
-  # NOTE: Income Per Member is NOT created; we rely on Log Income and Family Size interaction.
-  cat("Log-Transforming Income...\n")
-  df_clean$AMT_INCOME_TOTAL_LOG <- log1p(df_clean$AMT_INCOME_TOTAL)
-  df_clean$AMT_INCOME_TOTAL <- NULL
-  
-  # 5. Handling Missing Values (Imputation)
-  # JUSTIFICATION: NN requires complete data.
-  cat("Imputing Missing Values...\n")
-  
-  # Numeric Imputation (Median)
-  num_vars <- names(select_if(df_clean, is.numeric))
-  for(var in num_vars) {
-    if(any(is.na(df_clean[[var]]))) {
-      df_clean[[var]][is.na(df_clean[[var]])] <- median(df_clean[[var]], na.rm = TRUE)
+  # 5. Fix inconsistent family sizes --------------------------------------
+  cat("Fixing inconsistent family size (CNT_FAM_MEMBERS < CNT_CHILDREN)...\n")
+  if (all(c("CNT_CHILDREN", "CNT_FAM_MEMBERS") %in% names(df_clean))) {
+    inconsistent <- df_clean$CNT_FAM_MEMBERS < df_clean$CNT_CHILDREN
+    if (any(inconsistent, na.rm = TRUE)) {
+      cat(" Correcting", sum(inconsistent, na.rm = TRUE), "rows.\n")
+      df_clean$CNT_FAM_MEMBERS[inconsistent] <-
+        df_clean$CNT_CHILDREN[inconsistent] + 1
     }
   }
   
-  # Categorical Imputation (Explicit "Unknown" Token)
-  # JUSTIFICATION: Missingness in credit data is often informative (MNAR).
-  cat_vars <- names(select_if(df_clean, is.character))
-  for(var in cat_vars) {
-    # Check for NA, empty string, or string "NA"
-    is_missing <- is.na(df_clean[[var]]) | df_clean[[var]] == "" | df_clean[[var]] == "NA"
-    if(any(is_missing)) {
-      cat(paste("Imputing 'Unknown' for column:", var, "\n"))
-      df_clean[[var]][is_missing] <- "Unknown"
+  # 6. Log-transform income ------------------------------------------------
+  cat("Log-transforming AMT_INCOME_TOTAL...\n")
+  if("AMT_INCOME_TOTAL" %in% names(df_clean)) {
+    df_clean$AMT_INCOME_TOTAL_LOG <- log1p(df_clean$AMT_INCOME_TOTAL)
+    df_clean$AMT_INCOME_TOTAL <- NULL
+  }
+  
+  # 7. Impute missing values ----------------------------------------------
+  cat("Imputing missing values (Median for numeric, 'Unknown' for categoricals)...\n")
+  
+  num_vars <- names(dplyr::select_if(df_clean, is.numeric))
+  for (v in num_vars) {
+    if (any(is.na(df_clean[[v]]))) {
+      df_clean[[v]][is.na(df_clean[[v]])] <- median(df_clean[[v]], na.rm = TRUE)
     }
   }
   
-  # 6. Encoding Target Variable (Buffer Zone Strategy)
-  # JUSTIFICATION: 
-  # Status '1' (30-59 DPD) is the Indeterminate Zone. 
-  # We filter it out to create a cleaner decision boundary between Good (0) and Bad (2+).
+  cat_vars <- names(dplyr::select_if(df_clean, is.character))
+  for (v in cat_vars) {
+    missing_idx <- is.na(df_clean[[v]]) | df_clean[[v]] == "" | df_clean[[v]] == "NA"
+    if (any(missing_idx)) {
+      df_clean[[v]][missing_idx] <- "Unknown"
+    }
+  }
   
-  cat("Applying Buffer Zone Strategy (Dropping Status '1')...\n")
-  # Ensure status is character for comparison
-  df_clean$status <- as.character(df_clean$status)
+  # 8. Target Engineering (Buffer Zone Strategy) ---------------------------
+  cat("Applying Buffer Zone Strategy for 'status' and creating TARGET...\n")
   
-  # Filter out '1'
-  df_clean <- df_clean %>% filter(status!= '1')
+  if ("status" %in% names(df_clean)) {
+    df_clean$status <- as.character(df_clean$status)
+    
+    # Remove ambiguous 30–59 DPD (status = "1")
+    before <- nrow(df_clean)
+    df_clean <- dplyr::filter(df_clean, status != "1")
+    cat(" Removed", before - nrow(df_clean), "rows with status '1'.\n")
+    
+    df_clean$TARGET <- ifelse(df_clean$status %in% c("2","3","4","5"), 1L, 0L)
+    df_clean$status <- NULL
+  }
   
-  cat("Mapping Target Variable (2,3,4,5 -> 1; 0,C,X -> 0)...\n")
-  # Map 2,3,4,5 to 1 (Bad/Default 60+ DPD)
-  # Map 0,C,X to 0 (Good)
-  df_clean$TARGET <- ifelse(df_clean$status %in% c('2', '3', '4', '5'), 1, 0)
+  df_clean$TARGET <- as.integer(df_clean$TARGET)
   
-  # Drop original status
-  df_clean$status <- NULL
+  # 9. Remove duplicate records -------------------------------------------
+  cat("Removing duplicate rows...\n")
+  before_dup <- nrow(df_clean)
+  df_clean <- dplyr::distinct(df_clean)
+  cat(" Removed", before_dup - nrow(df_clean), "duplicate rows.\n")
   
-  # Ensure TARGET is factor for classification
-  df_clean$TARGET <- as.factor(df_clean$TARGET)
+  # 10. Zero-variance filter ----------------------------------------------
+  cat("Checking for zero-variance columns...\n")
+  features_only <- dplyr::select(df_clean, -TARGET)
+  nzv <- caret::nearZeroVar(features_only, saveMetrics = TRUE)
   
-  # 7. Duplicate Removal
-  cat("Removing Duplicates...\n")
-  df_clean <- distinct(df_clean)
-  
-  # 8. Zero Variance Filter
-  # JUSTIFICATION: Constant columns break encoding and provide no info.
-  cat("Checking for Zero Variance columns...\n")
-  features <- df_clean %>% select(-TARGET) # Exclude target from check
-  nzv <- nearZeroVar(features, saveMetrics = TRUE)
-  
-  if(any(nzv$zeroVar)) {
+  if (any(nzv$zeroVar)) {
     drops <- rownames(nzv)[nzv$zeroVar]
-    cat("DROPPING CONSTANT COLUMNS:", paste(drops, collapse=", "), "\n")
-    df_clean <- df_clean[,!names(df_clean) %in% drops]
+    cat(" Dropping constant columns:", paste(drops, collapse = ", "), "\n")
+    df_clean <- df_clean[, !names(df_clean) %in% drops, drop = FALSE]
   }
   
-  cat("\n--- Module 3 Complete ---\n")
+  cat("\n--- Module 3 Complete (Optimized) ---\n")
   return(df_clean)
 }
 
+
 # ==============================================================================
+
 # Module 4: Preprocessed Diagnostic EDA
+
 # ==============================================================================
+
 # JUSTIFICATION: Verify cleaning and check correlations on clean data.
-perform_eda <- function(df_clean) {
-  cat("\n================================================================\n")
-  cat(" MODULE 4: SECONDARY DATA EXPLORATION (CLEANED DATA)\n")
-  cat("================================================================\n")
-  
-  # 1. Re-check Dimensions
-  cat("New Dimensions:", dim(df_clean), "\n")
-  
-  # 2. Visualize New Features (AGE)
-  if("AGE" %in% names(df_clean)) {
-    p_age <- ggplot(df_clean, aes(x=AGE)) + 
-      geom_histogram(fill="purple", bins=30) + 
-      labs(title="Distribution of Derived Feature: AGE") + theme_minimal()
-    print(p_age)
-  }
-  
-  # 3. Correlation Analysis (Numeric)
-  cat("Generating Correlation Matrix...\n")
-  num_df <- select_if(df_clean, is.numeric)
-  if(ncol(num_df) > 1) {
-    cor_mat <- cor(num_df)
-    corrplot(cor_mat, method="circle", type="lower", title="Correlation Matrix (Cleaned)", mar=c(0,0,2,0))
-  }
-  
-  # 4. Categorical vs Target Analysis
-  cat_vars <- names(select_if(df_clean, is.character))
-  for(var in cat_vars) {
-    p_bivar <- ggplot(df_clean, aes_string(x=var, fill="TARGET")) +
-      geom_bar(position="fill") +
-      labs(title = paste("Target Proportion by", var), y="Proportion") +
-      coord_flip() +
-      theme_minimal()
-    print(p_bivar)
-  }
-  
-  cat("\n--- Module 4 Complete ---\n")
-}
+
+perform_eda \<- function(df_clean) {
+cat("\n================================================================\n")
+cat(" MODULE 4: SECONDARY DATA EXPLORATION (CLEANED DATA)\n")
+cat("================================================================\n")
+
+\# 1. Re-check Dimensions cat("New Dimensions:", dim(df_clean), "\n")
+
+\# 2. Visualize New Features (AGE) if("AGE" %in% names(df_clean)) {
+p_age \<- ggplot(df_clean, aes(x=AGE)) + geom_histogram(fill="purple",
+bins=30) + labs(title="Distribution of Derived Feature: AGE") +
+theme_minimal() print(p_age) }
+
+\# 3. Correlation Analysis (Numeric) cat("Generating Correlation
+Matrix...\n") num_df \<- select_if(df_clean, is.numeric) if(ncol(num_df)
+\> 1) { cor_mat \<- cor(num_df) corrplot(cor_mat, method="circle",
+type="lower", title="Correlation Matrix (Cleaned)", mar=c(0,0,2,0)) }
+
+\# 4. Categorical vs Target Analysis cat_vars \<-
+names(select_if(df_clean, is.character)) for(var in cat_vars) { p_bivar
+\<- ggplot(df_clean, aes_string(x=var, fill="TARGET")) +
+geom_bar(position="fill") + labs(title = paste("Target Proportion by",
+var), y="Proportion") + coord_flip() + theme_minimal() print(p_bivar) }
+
+cat("\n--- Module 4 Complete ---\n") }
 
 # ==============================================================================
+
 # Module 5: Neural Network Data Preparation
+
 # ==============================================================================
 
-prepare_for_nn <- function(df) {
+fit_nn_preprocessing <- function(df_clean, target_var = "TARGET") {
   cat("\n================================================================\n")
-  cat(" MODULE 5: NN PREPARATION (Encoding & Scaling)\n")
+  cat(" FIT NN PREPROCESSING (Train-only encoding + scaling)\n")
   cat("================================================================\n")
   
-  # 1. Separation of Target and Features
-  target_var <- "TARGET"
-  Y <- as.numeric(as.character(df[[target_var]])) # Ensure 0/1 numeric
-  X_raw <- df %>% select(-all_of(target_var))
+  y <- df_clean[[target_var]]
+  X <- df_clean %>% dplyr::select(-all_of(target_var))
   
-  # 2. Dummy Encoding (One-Hot) for Categorical
-  # JUSTIFICATION: Neural Networks require numerical input.
-  cat("One-Hot Encoding Categorical Variables...\n")
+  # Convert characters to factors for dummyVars
+  char_cols <- names(dplyr::select_if(X, is.character))
+  X[char_cols] <- lapply(X[char_cols], factor)
   
-  # Ensure input to dummyVars has no single-level factors (Double check)
-  X_raw <- X_raw[, sapply(X_raw, function(col) length(unique(col))) > 1]
+  # One-hot encoding model
+  cat("Fitting dummyVars model...\n")
+  dummies_model <- caret::dummyVars(" ~ .", data = X, fullRank = FALSE)
+  X_encoded <- predict(dummies_model, newdata = X) %>% as.data.frame()
   
-  dummies_model <- dummyVars(~., data = X_raw, fullRank = FALSE) # fullRank=FALSE for One-Hot
-  X_encoded <- predict(dummies_model, newdata = X_raw)
-  X_encoded <- as.data.frame(X_encoded)
+  # Min–Max scaler
+  cat("Fitting Min–Max scaler...\n")
+  scaler <- caret::preProcess(X_encoded, method = "range")
+  X_scaled <- predict(scaler, X_encoded)
   
-  # 3. Min-Max Scaling
-  # JUSTIFICATION: Neural Networks converge faster when inputs are scaled .
-  cat("Applying Min-Max Scaling ...\n")
+  cat("Encoded & scaled feature matrix has", ncol(X_scaled), "columns.\n")
   
-  process_scaler <- preProcess(X_encoded, method = c("range"))
-  X_scaled <- predict(process_scaler, X_encoded)
-  
-  # 4. Convert to Matrix
-  # JUSTIFICATION: Keras/TensorFlow in R expects Matrix format.
-  X_matrix <- as.matrix(X_scaled)
-  Y_vector <- as.array(Y)
-  
-  cat("Final X dimensions:", dim(X_matrix), "\n")
-  cat("Final Y dimensions:", length(Y_vector), "\n")
-  
-  return(list(X = X_matrix, Y = Y_vector))
+  return(list(
+    dummies_model = dummies_model,
+    scaler = scaler,
+    feature_names = colnames(X_scaled),
+    target_var = target_var
+  ))
 }
 
+apply_nn_preprocessing <- function(df_clean, preprocessing) {
+  target_var <- preprocessing$target_var
+  
+  y <- df_clean[[target_var]]
+  X <- df_clean %>% dplyr::select(-all_of(target_var))
+  
+  char_cols <- names(dplyr::select_if(X, is.character))
+  X[char_cols] <- lapply(X[char_cols], factor)
+  
+  # One-hot encoding using training dummyVars
+  X_encoded <- predict(preprocessing$dummies_model, newdata = X) %>% as.data.frame()
+  
+  # Add any missing dummy columns
+  missing_cols <- setdiff(preprocessing$feature_names, colnames(X_encoded))
+  if (length(missing_cols) > 0) {
+    for (m in missing_cols) {
+      X_encoded[[m]] <- 0
+    }
+  }
+  
+  # Align column order
+  X_encoded <- X_encoded[, preprocessing$feature_names, drop = FALSE]
+  
+  # Scaling
+  X_scaled <- predict(preprocessing$scaler, X_encoded)
+  
+  return(list(
+    X = as.matrix(X_scaled),
+    Y = as.numeric(y)
+  ))
+}
+
+prepare_for_nn <- function(df_clean, target_var = "TARGET", train_ratio = 0.7) {
+  cat("\n================================================================\n")
+  cat(" MODULE 5: NN PREPARATION (Split + Preprocessing)\n")
+  cat("================================================================\n")
+  
+  set.seed(123)
+  idx_train <- caret::createDataPartition(df_clean[[target_var]], 
+                                          p = train_ratio, list = FALSE)
+  
+  df_train <- df_clean[idx_train, ]
+  df_test  <- df_clean[-idx_train, ]
+  
+  cat("Train rows:", nrow(df_train), "| Test rows:", nrow(df_test), "\n")
+  
+  preprocessing <- fit_nn_preprocessing(df_train, target_var)
+  
+  train_mats <- apply_nn_preprocessing(df_train, preprocessing)
+  test_mats  <- apply_nn_preprocessing(df_test, preprocessing)
+  
+  cat("Train matrix:", dim(train_mats$X), "\n")
+  cat("Test matrix :", dim(test_mats$X), "\n")
+  
+  return(list(
+    X_train = train_mats$X,
+    Y_train = train_mats$Y,
+    X_test  = test_mats$X,
+    Y_test  = test_mats$Y,
+    preprocessing = preprocessing
+  ))
+}
+
+
 # ==============================================================================
+
 # Module 6: Execution & Reporting
+
 # ==============================================================================
 
-execute_pipeline <- function() {
-  
-  # 1. Set Paths
-  base_path <- "C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_Part2_Scripts/Auto_Generated_Plots"
-  data_path <- "C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_data/Dataset-part-2.csv"
-  
-  # Create directory if it doesn't exist
-  if(!dir.exists(base_path)) {
-    dir.create(base_path, recursive = TRUE)
-    cat("Created directory:", base_path, "\n")
-  }
-  
-  # 2. Load Data
-  if(file.exists(data_path)) {
-    raw_data <- load_data(data_path)
-  } else {
-    stop("Please check the filepath in Module 6.")
-  }
-  
-  # 3. Define Auto-Save Function
-  save_plots_to_pdf <- function(raw_df, cleaned_df) {
-    
-    # Generate Timestamp
-    ts <- format(Sys.time(), "%d.%m.%Y.(%H%M)")
-    filename <- paste0("Autogenerated_Plots_", ts, ".pdf")
-    full_path <- file.path(base_path, filename)
-    
-    cat("\nStarting PDF Generation to:", full_path, "\n")
-    
-    pdf(file = full_path, width = 10, height = 7)
-    
-    cat("Writing Module 2 plots to PDF...\n")
-    perform_initial_eda(raw_df)
-    
-    cat("Processing Cleaned Data (for visualization step)...\n")
-    cat("Writing Module 4 plots to PDF...\n")
-    perform_eda(cleaned_df)
-    
-    dev.off()
-    cat("PDF Generation Complete.\n")
-  }
-  
-  # --- EXECUTION FLOW ---
-  
-  # Step A: Initial Analysis
-  perform_initial_eda(raw_data)
-  
-  # Step B: Cleaning (Buffer Zone, Log Income, Age, Imputation)
-  clean_data <- process_credit_data(raw_data)
-  
-  # Step C: Post-Clean Analysis
-  perform_eda(clean_data)
-  
-  # Step D: Generate PDF Report
-  save_plots_to_pdf(raw_data, clean_data)
-  
-  # Step E: Final NN Prep (Encoding/Scaling)
-  nn_data <- prepare_for_nn(clean_data)
-  
-  return(nn_data)
+execute_pipeline \<- function() {
+
+\# 1. Set Paths base_path \<- "C:/Users/John
+Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_Part2_Scripts/Auto_Generated_Plots"
+data_path \<- "C:/Users/John
+Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_data/Dataset-part-2.csv"
+
+\# Create directory if it doesn't exist if(!dir.exists(base_path)) {
+dir.create(base_path, recursive = TRUE) cat("Created directory:",
+base_path, "\n") }
+
+\# 2. Load Data if(file.exists(data_path)) { raw_data \<-
+load_data(data_path) } else { stop("Please check the filepath in Module
+6.") }
+
+\# 3. Define Auto-Save Function save_plots_to_pdf \<- function(raw_df,
+cleaned_df) {
+
+```         
+# Generate Timestamp
+ts <- format(Sys.time(), "%d.%m.%Y.(%H%M)")
+filename <- paste0("Autogenerated_Plots_", ts, ".pdf")
+full_path <- file.path(base_path, filename)
+
+cat("\nStarting PDF Generation to:", full_path, "\n")
+
+pdf(file = full_path, width = 10, height = 7)
+
+cat("Writing Module 2 plots to PDF...\n")
+perform_initial_eda(raw_df)
+
+cat("Processing Cleaned Data (for visualization step)...\n")
+cat("Writing Module 4 plots to PDF...\n")
+perform_eda(cleaned_df)
+
+dev.off()
+cat("PDF Generation Complete.\n")
+```
+
 }
+
+\# --- EXECUTION FLOW ---
+
+\# Step A: Initial Analysis perform_initial_eda(raw_data)
+
+\# Step B: Cleaning (Buffer Zone, Log Income, Age, Imputation)
+clean_data \<- process_credit_data(raw_data)
+
+\# Step C: Post-Clean Analysis perform_eda(clean_data)
+
+\# Step D: Generate PDF Report save_plots_to_pdf(raw_data, clean_data)
+
+\# Step E: Final NN Prep (Encoding/Scaling) nn_data \<-
+prepare_for_nn(clean_data)
+
+return(nn_data) }
 
 # Run the pipeline
-final_matrices <- execute_pipeline()
 
-```r
+final_matrices \<- execute_pipeline()
+
+```
+
 
 # 5. Advanced Feature Engineering for Neural Networks
 
 ## 5.1 The Scaling Imperative: Optimizing the Loss Surface
 
-The training of a Neural Network involves minimizing a non-convex loss function $J(\theta)$ via gradient descent. The update rule for a weight $w$ is given by:
+The training of a Neural Network involves minimizing a non-convex loss
+function $J(\theta)$ via gradient descent. The update rule for a weight
+$w$ is given by:
 
 $$w_{new} = w_{old} - \eta \cdot \frac{\partial J}{\partial w}$$
 
-If our dataset contains AGE (range 0-1 after scaling) and raw `AMT_INCOME` (range 20,000 - 1,000,000), the error surface contours become extremely elongated ellipses. The gradient with respect to the income weights will be massive, causing the optimizer to overshoot the minimum, while the gradient for age will be tiny. By applying Min-Max Scaling (Step 3 in Module 5), we compress all features into the $[0, 1]$ hypercube, making the error surface contours more spherical and allowing for a higher learning rate $\eta$ without divergence.
+If our dataset contains AGE (range 0-1 after scaling) and raw
+`AMT_INCOME` (range 20,000 - 1,000,000), the error surface contours
+become extremely elongated ellipses. The gradient with respect to the
+income weights will be massive, causing the optimizer to overshoot the
+minimum, while the gradient for age will be tiny. By applying Min-Max
+Scaling (Step 3 in Module 5), we compress all features into the $[0, 1]$
+hypercube, making the error surface contours more spherical and allowing
+for a higher learning rate $\eta$ without divergence.
 
 ## 5.2 One-Hot Encoding and Vector Space Orthogonality
 
-The choice of One-Hot Encoding over Label Encoding is a geometric necessity for Neural Networks. Label Encoding maps categories to integers (e.g., Accountant=1, Laborer=2, Manager=3). A Neural Network, which performs arithmetic operations on inputs, will inherently interpret this as $1 < 2 < 3$ and potentially assume that $Accountant + Laborer = Manager$. This imposes a false ordinality on nominal data. One-Hot Encoding, by creating binary vectors, ensures that the dot product between any two distinct categories is zero (orthogonality), allowing the network to learn weights for each category independently without topological distortion.
+The choice of One-Hot Encoding over Label Encoding is a geometric
+necessity for Neural Networks. Label Encoding maps categories to
+integers (e.g., Accountant=1, Laborer=2, Manager=3). A Neural Network,
+which performs arithmetic operations on inputs, will inherently
+interpret this as $1 < 2 < 3$ and potentially assume that
+$Accountant + Laborer = Manager$. This imposes a false ordinality on
+nominal data. One-Hot Encoding, by creating binary vectors, ensures that
+the dot product between any two distinct categories is zero
+(orthogonality), allowing the network to learn weights for each category
+independently without topological distortion.
 
 # 6. Validation & Production Readiness
 
-The final phase introduces explicit assertions to ensure the data matrix is chemically stable for TensorFlow/Keras:
+The final phase introduces explicit assertions to ensure the data matrix
+is chemically stable for TensorFlow/Keras:
 
-* **Nullity Check:** The imputation strategy (Median/Unknown) guarantees `any(is.na(X_matrix))` returns `FALSE`.
-* **Range Check:** The Min-Max scaler guarantees `max(X_matrix) == 1` and `min(X_matrix) == 0`.
-* **Manifold Integrity:** By removing the sentinel values in `DAYS_EMPLOYED` and log-transforming `AMT_INCOME_TOTAL`, we have smoothed the discontinuities in the input manifold, allowing the Neural Network to approximate the credit risk function with high fidelity.
+-   **Nullity Check:** The imputation strategy (Median/Unknown)
+    guarantees `any(is.na(X_matrix))` returns `FALSE`.
+-   **Range Check:** The Min-Max scaler guarantees `max(X_matrix) == 1`
+    and `min(X_matrix) == 0`.
+-   **Manifold Integrity:** By isolating the sentinel values in 
+  `DAYS_EMPLOYED`, converting them into a clean `EMPLOYMENT_YEARS` feature 
+  plus an `IS_RETIRED` flag, and log-transforming `AMT_INCOME_TOTAL`, 
+  we have smoothed the discontinuities in the input manifold and removed 
+  extreme outliers, allowing the Neural Network to approximate the credit 
+  risk function with higher fidelity.
 
-This refactored pipeline represents a significant maturation from the initial exploratory script. It is now a robust, mathematically grounded engineering artifact ready for the deployment of advanced deep learning architectures.
+
+This refactored pipeline represents a significant maturation from the
+initial exploratory script. It is now a robust, mathematically grounded
+engineering artifact ready for the deployment of advanced deep learning
+architectures.
 
 # 7. Module Output Analysis Summary
 
 **Table 2: Pipeline Transformation Summary**
 
 | Transformation Step | Original State | Refactored State | Theoretical Justification |
-| :--- | :--- | :--- | :--- |
+|:-----------------|:-----------------|:-----------------|:-----------------|
 | **Target Definition** | Opaque / Mixed | Buffer Zone (60+ DPD) | Removes indeterminate noise (30-59 DPD) to sharpen decision boundary. |
 | **Income Feature** | Raw / Ratio | Log-Transformed | Compresses heavy tails; stabilizes variance for SGD. |
-| **Employment Data** | Sentinel (365243) | Imputed (0) + Flag | Restores manifold continuity; preserves pensioner signal. |
+| **Employment Data** | Sentinel (365243) in raw days | `EMPLOYMENT_YEARS` + `IS_RETIRED` | Removes extreme sentinel outlier, puts tenure on a yearly scale, and preserves the pensioner signal. |
 | **Categorical Missing** | Mode Imputation | "Unknown" Token | Preserves MNAR (Missing Not At Random) signal structure. |
 | **Dimensionality** | Unchecked | Zero Variance Filter | Prevents singular matrices and dead neurons. |
 | **Normalization** | None | Min-Max | Isotropicizes the error surface for optimal convergence. |
@@ -591,6 +889,16 @@ This refactored pipeline represents a significant maturation from the initial ex
 
 While the current script is robust, future iterations could consider:
 
-* **Dynamic Thresholding:** Instead of a hard 60 DPD cutoff, implementing a "Roll Rate" analysis to empirically determine the point of no return for this specific portfolio.
-* **Embeddings:** Replacing One-Hot Encoding with Learned Embeddings (Entity Embeddings) for high-cardinality variables like `OCCUPATION_TYPE` to further reduce dimensionality and capture semantic relationships.
-* **Stratified Sampling:** Ensuring that the Train/Test split (downstream of this script) maintains the prevalence of the new target definition to prevent "Accuracy Paradox" issues in evaluation. The current 99% accuracy often achieved in credit risk is illusory if the minority class is negligible; metrics like ROC-AUC and F1-Score must be prioritized.
+-   **Dynamic Thresholding:** Instead of a hard 60 DPD cutoff,
+    implementing a "Roll Rate" analysis to empirically determine the
+    point of no return for this specific portfolio.
+-   **Embeddings:** Replacing One-Hot Encoding with Learned Embeddings
+    (Entity Embeddings) for high-cardinality variables like
+    `OCCUPATION_TYPE` to further reduce dimensionality and capture
+    semantic relationships.
+-   **Stratified Sampling:** Ensuring that the Train/Test split
+    (downstream of this script) maintains the prevalence of the new
+    target definition to prevent "Accuracy Paradox" issues in
+    evaluation. The current 99% accuracy often achieved in credit risk
+    is illusory if the minority class is negligible; metrics like
+    ROC-AUC and F1-Score must be prioritized.

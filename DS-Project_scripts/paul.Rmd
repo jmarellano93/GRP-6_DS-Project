@@ -1,4 +1,8 @@
 # Workflow
+```{r}
+setwd("~/Documents/Repos/GRP-6_DS-Project")
+```
+
 
 ### write chapter of the workflow and how it differs from best practice
 
@@ -20,7 +24,7 @@ library(caret)
 The data is loaded into a dataframe and predefined columns are dropped. With a first look at the data using the data dictionary, as well as looking at the first few rows, a dictionary for the data types is created. The data is casted into the correct data types. and a copy of the original dataframe is created for backup.
 
 ```{r}
-original <- read.csv("~/GRP-6_DS-Project/DS-Project_data/LCdata.csv", 
+original <- read.csv("~/Documents/Repos/GRP-6_DS-Project/DS-Project_data/LCdata.csv", 
                  row.names = NULL, 
                  sep = ";",
                  header = TRUE)
@@ -137,8 +141,8 @@ print(head(data))
 
 # Get the dimensions of the dataset
 dim(data)
-print(paste("The number of rows is:", nrow(data))) # 798641
-print(paste("The number of columns is:", ncol(data))) # 54
+print(paste("The number of rows is:", nrow(data))) # 798'641
+print(paste("The number of columns is:", ncol(data))) # 53
 
 # Get the structure of the dataset
 str(data)
@@ -332,6 +336,13 @@ logic_emp %>%
 
 Problem!
 
+
+```{r}
+#show unique values of policy code
+print(unique(data$policy_code))
+```
+Policy code only has one value (1). Therefore it is dropped later.
+
 ## Data Wrangling
 
 Data wrangling is the process of cleaning and transforming raw data into a format that is suitable for analysis. This includes handling missing values, correcting duplicate entries, and addressing any incorrect values in the dataset. The first chapters of this project are per definition also part of data wrangling, but were seperated for better clarity in the code. Cleaning and transforming the data is an iterative process that requires careful consideration of the specific characteristics of the dataset and the goals of the analysis. The better the cleaning and transforming is done, the more reliable and accurate the results of the analysis will be.
@@ -449,7 +460,7 @@ columns_to_drop_na <- c("open_acc_6m",
                          "inq_last_12m")
 # Drop the columns from the dataset
 cleaned_data <- data[, -match(columns_to_drop_na, names(data))]
-dim(cleaned_data) # 798'641 rows and 40 columns now
+dim(cleaned_data) # 798'641 rows and 38 columns now
 ```
 
 It is noticeable that there are exactly 25 rows with NA-values in multiple columns. If these 25 rows are always the same, it would make sense to drop these rows altogether instead of imputing the missing values.
@@ -475,7 +486,7 @@ As seen in the output, the 25 rows with NA-values are indeed always the same. Th
 # Remove rows with id values found in na_rows
 cleaned_data <- cleaned_data %>%
   filter(!id %in% na_rows$id)
-dim(cleaned_data) # 798'616 rows and 40 columns now
+dim(cleaned_data) # 798'572 rows and 38 columns now
 ```
 
 A similar trend can be seen in tot_call_amt, tot_cur_bal and total_rev_hi_lim, where exactly 63'276 rows have NA-values in all three columns. We check if these rows are the same and filter them out of the cleaned dataset if so.
@@ -609,7 +620,7 @@ cat("Rows remaining after removing joint applications:", nrow(cleaned_data), "\n
 # drop column application_type as it now only contains one value
 cleaned_data <- cleaned_data %>%
   select(-application_type)
-dim(cleaned_data) # 734'905 rows and 37 columns now
+dim(cleaned_data) # 734'863 rows and 34 columns now
 ```
 
 ```{r}
@@ -744,6 +755,10 @@ print("Highest 10 annual incomes after fixing:")
 print(extreme_annual_inc_after$highest)
 ```
 
+```{r}
+summary(cleaned_data$annual_inc)
+```
+
 Since the data is still right-skewed, one could consider to scale this feature before modelling.
 
 #### debt-to-income ratio (dti)
@@ -819,7 +834,7 @@ plot_after
 # Inspect contradictions between delinq_2yrs and mths_since_last_delinq
 extreme_delinq <- cleaned_data%>%
   filter(delinq_2yrs > 0 & mths_since_last_delinq > 24)
-print(extreme_delinq) # 1'261 rows
+print(extreme_delinq) # 1'260 rows
 ```
 
 The variables delinq_2yrs (number of delinquencies in the past 24 months) and mths_since_last_delinq (months since the most recent delinquency) both describe aspects of a borrower’s delinquency history and must therefore be internally consistent. A borrower who had at least one delinquency in the past 24 months (delinq_2yrs \> 0) must have a corresponding mths_since_last_delinq value between 0 and 24. Any value above 24 months indicates a contradiction, typically originating from stale bureau data or import inconsistencies. Because delinq_2yrs represents a stable bureau summary metric, it is considered more reliable than the more granular timing field. Therefore, we treat mths_since_last_delinq as incorrect in such cases and set it to NA for later imputation.
@@ -895,7 +910,7 @@ mutate(delinq_2yrs_cat = case_when(
   TRUE ~ NA_character_
   )) %>%
   mutate(delinq_2yrs_cat = factor(delinq_2yrs_cat,
-  levels = c("0", "1", "2", "3+"),
+  levels = c("3+", "2", "1", "0"),
   ordered = TRUE))
 ```
 
@@ -916,11 +931,6 @@ cleaned_data <- cleaned_data %>%
                                  levels = c("0", "1-6", "7-12", "13-24", "24+", "none"),
                                  ordered = TRUE))
 ```
-
-```{r}
-
-```
-
 
 Finally, we encode acc_now_delinq as a binary indicator, as is standard in risk modeling:
 
@@ -1162,7 +1172,9 @@ cleaned_data <- cleaned_data %>%
     mths_since_last_major_derog <= 84 ~ "49-84",
     TRUE ~ ">84"
   )) %>%
-  mutate(major_derog_recency = factor(major_derog_recency))
+  mutate(major_derog_recency = factor(major_derog_recency,
+                                 levels = c("49-84", "25-48", "13-24", "7-12", "1-6", "0", "none"),
+                                 ordered = TRUE))
 ```
 
 The variables tot_coll_amt and tot_cur_bal also require structural validation. The field tot_coll_amt represents the total historical dollar amount ever assigned to collections. As a monetary field recorded in whole dollars, it must be zero or positive; negative values are impossible and are corrected by setting the field to NA.
@@ -1215,11 +1227,14 @@ cleaned_data <- cleaned_data %>%
   mutate(tot_coll_amt = ifelse(tot_coll_amt > 50000, NA, tot_coll_amt))
 ```
 
-Furthermore there are other columns to drop, which aren't useful for modelling or have too many missing values. These columns are: - id - member-id - revol_util: can be calculated with revol_bal and total_rev_hi_lim anyway
+
+
+
+Furthermore there are other columns to drop, which aren't useful for modelling or have too many missing values. These columns are: - id - member-id -
 
 ```{r}
 cleaned_data <- cleaned_data %>%
-  select(-c(id, member_id, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs, mths_since_last_record, pub_rec))
+  select(-c(id, member_id, url, desc, zip_code, policy_code, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs, mths_since_last_record, pub_rec, loan_amnt))
 ```
 
 We end up with following dataframe for imputation and modeling.
@@ -1312,7 +1327,6 @@ head(missing_values, 54)  # just to inspect
 ```
 
 ```{r}
-
 names(cleaned_data)
 ```
 

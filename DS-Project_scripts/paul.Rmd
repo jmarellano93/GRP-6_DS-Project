@@ -202,6 +202,16 @@ levels(data$term)
 levels(data$emp_length)
 levels(data$home_ownership)
 ```
+```{r}
+# Clean term variable
+data$term <- trimws(data$term)                       # remove whitespace
+data$term <- ifelse(grepl("36", data$term), "36", "60")  # convert to pure numeric strings
+data$term <- factor(data$term,
+                    levels = c("60", "36"),          # 60 months is higher risk
+                    ordered = TRUE)
+
+levels(data$term)
+```
 
 ```{r}
 data$emp_length[data$emp_length == "n/a"] <- NA
@@ -390,6 +400,11 @@ unique_title   <- length(unique(title_chr))
 
 unique_purpose
 unique_title
+```
+```{r}
+# Show all unique values of purpose and the count
+table(data$purpose)
+
 ```
 
 Since purpose contains more clear classifications, title was dropped. As a free text field, title does not provide a clear purpose. ("My New Car", "CAR", "Buy a car", "Car loan!!", "Auto", "Car debt consolidation")
@@ -1230,11 +1245,11 @@ cleaned_data <- cleaned_data %>%
 
 
 
-Furthermore there are other columns to drop, which aren't useful for modelling or have too many missing values. These columns are: - id - member-id -
+Furthermore there are other columns to drop, which aren't useful for modelling or have too many missing values. Policy code is always 1 and has therefore no value for modelling. We drop revol_util for now, since we should check the recalculation after imputation. If we decide to include it in modelling, we should drop at least one of the two other variables revol_bal or total_rev_hi_lim to avoid multicollinearity. We drop also mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs and pub_rec, since we created categorical variables from them before.
 
 ```{r}
 cleaned_data <- cleaned_data %>%
-  select(-c(id, member_id, url, desc, zip_code, policy_code, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs, mths_since_last_record, pub_rec, loan_amnt))
+  select(-c(id, member_id, url, desc, zip_code, emp_title, policy_code, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs, mths_since_last_record, pub_rec))
 ```
 
 We end up with following dataframe for imputation and modeling.

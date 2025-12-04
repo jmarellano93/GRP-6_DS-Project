@@ -533,6 +533,8 @@ cat("Remaining rows after dropping these:", nrow(cleaned_data), "\n")
 
 The variables tot_coll_amt, tot_cur_bal, and total_rev_hi_lim represent a borrower’s total collection amount, total current balances, and total revolving credit limit. These three features describe the borrower’s overall credit utilization profile, which is essential for assessing creditworthiness. In the cleaned dataset, 63'251 rows had all three of these variables missing simultaneously. Such rows were removed because: - They contain no usable information about the borrower’s credit balance. - With all three fields missing, the borrower’s credit exposure cannot be approximated or imputed reliably. - The missingness is structural, not random. - Borrowers with all three fields missing typically reflect incomplete or corrupted credit bureau data, not normal variation. - Imputation is not appropriate when the entire feature set is missing. - Imputing values would inject arbitrary numbers into critical financial variables, degrading model validity. - They represent a very small portion of the overall dataset, so dropping them does not meaningfully reduce sample size or introduce bias. For these reasons, rows where tot_coll_amt, tot_cur_bal, and total_rev_hi_lim were all NA were excluded from further analysis.
 
+
+
 ### Joint accounts
 
 ```{r}
@@ -885,7 +887,13 @@ cleaned_data <- cleaned_data %>%
 print(nrow(cleaned_data))
 ```
 
-A further consistency check is performed using acc_now_delinq, which counts currently delinquent accounts. A borrower cannot have acc_now_delinq \> 0 while simultaneously reporting delinq_2yrs == 0, nor can the time since last delinquency be greater than zero. Current delinquency is the strongest and most precise indicator; therefore, contradictions involving acc_now_delinq must be resolved by correcting or removing inconsistent timing information.
+A further consistency check is performed using acc_now_delinq, which counts currently delinquent accounts. A borrower cannot have acc_now_delinq > 0 while simultaneously reporting delinq_2yrs == 0, nor can the time since last delinquency be greater than zero. Current delinquency is the strongest and most precise indicator; therefore, contradictions involving acc_now_delinq must be resolved by correcting or removing inconsistent timing information.
+```{r}
+# Check distinct values of acc_now_delinq
+table(cleaned_data$acc_now_delinq)
+```
+
+
 
 ```{r}
 # Current delinquency contradicting long time-since
@@ -947,11 +955,24 @@ cleaned_data <- cleaned_data %>%
                                  ordered = TRUE))
 ```
 
-Finally, we encode acc_now_delinq as a binary indicator, as is standard in risk modeling:
+Finally, we convert acc_now_delinq into a binary indicator, which is standard practice in credit-risk modeling.
+Although the raw variable can take values greater than 1, the vast majority of observations are zero, and higher counts occur so rarely that they do not provide stable or meaningful predictive signal. In consumer credit data, the presence of any currently delinquent account already represents a severe and immediate risk event. Distinguishing between one, two, or more simultaneous delinquencies offers little additional predictive value but introduces unnecessary noise due to extremely small sample sizes in the higher categories.
+By collapsing all values greater than zero into a single category, we achieve the following:
+- Improved model stability: Rare categories such as 3, 4, 5, or 14 delinquencies occur in only a handful of cases and would lead to unreliable parameter estimates or unstable tree splits.
+- Preservation of the risk signal: From a business and regulatory perspective, “currently delinquent” vs. “not currently delinquent” captures the full decision-relevant information.
+- Reduced variance and better generalization: Binning prevents overfitting to rare outliers and yields smoother, more robust model behavior.
+- Consistency with industry scorecards: Most commercial scorecards (e.g., FICO) use a binary indicator for current delinquency rather than the raw count.
+This transformation ensures that the feature reflects its true predictive meaning while maintaining statistical reliability.
 
 ```{r}
 cleaned_data <- cleaned_data %>%
 mutate(acc_now_delinq_bin = ifelse(acc_now_delinq > 0, 1, 0))
+
+cleaned_data <- cleaned_data %>%
+  mutate(acc_now_delinq_bin = factor(ifelse(acc_now_delinq > 0, "1", "0"),
+                                     levels = c("0", "1")))
+
+cleaned_data <- cleaned_data %>% select(-acc_now_delinq)
 
 # amount of rows after mutation
 print(nrow(cleaned_data))
@@ -1142,6 +1163,19 @@ invalid_coll <- cleaned_data %>%
   filter(collections_12_mths_ex_med < 0 | collections_12_mths_ex_med %% 1 != 0)
 invalid_coll # 0 rows
 ```
+```{r}
+# Check the distribution of collections_12_mths_ex_med
+summary(cleaned_data$collections_12_mths_ex_med)
+```
+We see that the mean and median are both 0 or almost 0. Only a very small minority is non-zero. This inflation is useless for modelling since there is no signal in it. We therefore can drop this column.
+```{r}
+cleaned_data <- cleaned_data %>%
+  select(-collections_12_mths_ex_med)
+# amount of rows after mutation
+print(nrow(cleaned_data))
+```
+
+
 
 The variable mths_since_last_major_derog indicates how many months have passed since the last major derogatory event such as bankruptcy, charge-off, foreclosure, or serious delinquency. As with other “months since event” fields, the interpretation is structural: if the borrower has never experienced a major derogatory, the value must be NA; if the borrower has such a history, the value must be zero or positive. Negative months or fractional months are impossible and must be removed. Although delinquency fields do not directly determine whether a major derogatory event occurred, the variable pub_rec (public records) does: any non-missing value in mths_since_last_major_derog implies at least one corresponding public record. Therefore, the following hard rules apply: if pub_rec == 0, then mths_since_last_major_derog must be NA; if mths_since_last_major_derog is zero or greater, then pub_rec must be at least 1. These checks ensure the two fields remain consistent.
 
@@ -1203,6 +1237,29 @@ invalid_tot_coll_amt # 0 rows
 print(nrow(cleaned_data))
 ```
 
+
+```{r}
+summary(cleaned_data$tot_coll_amt)
+
+# show histogram
+ggplot(cleaned_data, aes(x = tot_coll_amt)) +
+  geom_histogram(bins = 30) +
+  ggtitle("Histogram of tot_coll_amt") +
+  theme_minimal()
+```
+
+The variable is heavily zero-inflated. The vast majority of observations take the value 0, indicating no prior collections. As a result, the variable exhibits near-zero variance, with almost no meaningful differentiation across most borrowers. Predictors with extremely low variance do not contribute useful information to a linear regression model and typically lead to unstable or insignificant coefficient estimates.
+Second, the remaining non-zero observations consist of a very small number of extreme outliers, with collection amounts reaching several million dollars. These values are several orders of magnitude larger than the rest of the data and exert disproportionate leverage on a linear regression fit. Even after applying a log-transformation, the underlying zero-inflation remains and the outliers continue to dominate the distribution. This violates key regression assumptions (linearity, constant variance, influence balance) and introduces risk of distorted parameter estimates.
+Together, the combination of zero-inflation, near-zero variance, and extreme outliers implies that tot_coll_amt is not suitable as a continuous predictor for linear regression. The variable does not provide stable or meaningful explanatory power and would likely degrade model performance. For this reason, the variable was removed from the modelling dataset.
+
+```{r}
+cleaned_data <- cleaned_data %>%
+  select(-tot_coll_amt)
+# amount of rows after mutation
+print(nrow(cleaned_data))
+```
+
+
 Similarly, tot_cur_bal reflects the borrower’s total current balance across all active credit lines and must also be zero or positive. If this balance is negative, the value is replaced by NA. In addition, if a positive total balance is reported, the borrower must have at least one open account. Because open_acc was previously cleaned, we verify that no rows show a positive balance with zero open accounts, which would be structurally impossible in credit reporting.
 
 ```{r}
@@ -1215,35 +1272,6 @@ contradiction_tot_cur_bal <- cleaned_data %>%
 contradiction_tot_cur_bal # 0 rows
 
 ```
-
-```{r}
-# Boxplot & Histogram for numerical columns to visualize outliers with ggplot2
-for (col_name in numerical_cols) {
-
-  p1 <- ggplot(cleaned_data, aes_string(x = col_name)) +
-    geom_histogram(bins = 30) +
-    ggtitle(paste("Histogram of", col_name)) +
-    theme_minimal()
-
-  p2 <- ggplot(cleaned_data, aes_string(y = col_name)) +
-    geom_boxplot() +
-    ggtitle(paste("Boxplot of", col_name)) +
-    theme_minimal()
-
-  # Combine side-by-side
-  print(p1 + p2)
-}
-```
-
-We still see an outlier at tot_coll_amt. Which we will set to NA
-
-```{r}
-cleaned_data <- cleaned_data %>%
-  mutate(tot_coll_amt = ifelse(tot_coll_amt > 50000, NA, tot_coll_amt))
-```
-
-
-
 
 Furthermore there are other columns to drop, which aren't useful for modelling or have too many missing values. Policy code is always 1 and has therefore no value for modelling. We drop revol_util for now, since we should check the recalculation after imputation. If we decide to include it in modelling, we should drop at least one of the two other variables revol_bal or total_rev_hi_lim to avoid multicollinearity. We drop also mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs and pub_rec, since we created categorical variables from them before.
 
@@ -1464,6 +1492,21 @@ rf_knn <- train(
 )
 
 pred_val_knn <- predict(rf_knn, newdata = val_knn)
+```
+
+
+### Transform columns with outliers after imputation
+
+```{r}
+cleaned_data$revol_bal_log <- log1p(cleaned_data$revol_bal)
+cleaned_data$tot_cur_bal_log <- log1p(cleaned_data$tot_cur_bal)
+cleaned_data$total_rev_hi_lim_log <- log1p(cleaned_data$total_rev_hi_lim)
+```
+
+Then drop the original column
+```{r}
+cleaned_data <- cleaned_data %>%
+  select(-c(revol_bal, tot_cur_bal, total_rev_hi_lim))
 ```
 
 ### Feature Selection

@@ -1,0 +1,788 @@
+df is called cleaned_data
+
+
+use hmisc for histograms
+
+scatterplots of
+numeric vs numeric
+factor vs numeric (boxplot)
+factor vs factor (mosaic-like plot)
+
+correlation structure with corrplot (multicollinearit risk and redundant variables) use corrplot
+
+train val test split (seed 123, 70/15/15)
+
+
+omit na since imputation is done by other programmer and will be used later
+
+
+repeat scatterplots and correlation matrix
+
+fit lin reg on train only
+
+check linearity (scatterplot of residual vs each predictor; partial residual plot)
+
+check homoscedasticity
+
+check normality of residuals with QQ plot
+
+check multicollinearity with VIF
+
+check influaential points (leverage)
+
+
+```{r}
+# Define the full path to the saved CSV file
+input_file_path <- "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/cleaned_data.csv"
+
+# Read the CSV file back into a data frame, typically giving it a new name
+cleaned_data <- read.csv(input_file_path)
+```
+
+--------------------------------------------------------------------------------------------------------
+```{r}
+library(Hmisc)     # histograms, general EDA
+library(corrplot)  # correlation plots
+library(ggplot2)   # nicer plots & loops
+      # VIF, partial residual plots
+#library(lmtest)    # Breusch-Pagan test (optional)
+```
+# 1. Data and Goal
+
+In this document we:
+
+- Start from a pre-cleaned dataframe `cleaned_data`.
+- Perform **EDA and structural checks** as recommended in the lecture:
+  - histograms,
+  - scatterplots for numeric–numeric, factor–numeric, factor–factor,
+  - correlation analysis for numeric variables.
+- Create a **train / validation / test split** (70/15/15, seed 123).
+- Use **complete cases only** for this document (`na.omit()`), because:
+  - a separate script/programmer will handle imputation for the final model pipeline,
+  - here we only need a fully observed subset to check linear regression assumptions.
+- Fit a **linear regression model on the training set only**.
+- Run all **mandatory linear regression diagnostics**:
+  - linearity,
+  - homoscedasticity,
+  - normality of residuals,
+  - multicollinearity (VIF),
+  - influential points / leverage.
+
+```{r}
+str(cleaned_data)
+summary(cleaned_data)
+```
+
+# 2. Complete-Case Subset for Diagnostic Work
+
+Imputation will be done later by another programmer for the final modelling pipeline.  
+For the **assumption checks in this document**, we use a **complete-case subset**:
+
+- This avoids mixing in imputation decisions here.
+- It guarantees that all diagnostics (residuals, VIF, etc.) are computed on fully observed rows.
+
+
+```{r complete-cases}
+cleaned_data_cc <- na.omit(cleaned_data)
+
+cat("Original number of rows:", nrow(cleaned_data), "\n")
+cat("Complete-case rows used in this document:", nrow(cleaned_data_cc), "\n")
+```
+
+
+---
+
+# 3. Global EDA Before Any Split
+
+We first explore the data structure and basic distributions before any split or model fitting.
+
+## 3.1 Histograms for All Numeric Variables (Hmisc)
+
+We use `Hmisc::hist.data.frame()` to inspect the distributions of all numeric variables:
+
+- to detect skewness,
+- to spot extreme values/outliers,
+- to think about possible transformations later (e.g. logs).
+
+
+```{r}
+#library(Hmisc)
+#hist.data.frame(cleaned_data_cc)
+
+
+numeric_vars <- names(cleaned_data_cc)[sapply(cleaned_data_cc, is.numeric)]
+
+for (v in numeric_vars) {
+  hist(cleaned_data_cc[[v]],
+       main = paste("Histogram of", v),
+       xlab = v,
+       col = "lightblue")
+}
+```
+```{r}
+table(cleaned_data$acc_now_delinq)
+table(cleaned_data$acc_now_delinq_bin)
+table(cleaned_data$delinq_2yrs)
+```
+
+
+## 3.2 Pairwise Relationships
+
+We want to see:
+
+- **numeric vs numeric** → scatterplots,
+- **factor vs numeric** → boxplots,
+- **factor vs factor** → mosaic-like association plots.
+
+Because this can generate a *lot* of plots, we show generic code and explain that in practice you might restrict to a subset of key variables.
+
+### 3.2.1 Helper functions to identify types
+
+```{r type-helpers}
+is_num   <- sapply(cleaned_data_cc, is.numeric)
+is_fact  <- sapply(cleaned_data_cc, is.factor)
+
+num_vars  <- names(cleaned_data_cc)[is_num]
+fact_vars <- names(cleaned_data_cc)[is_fact]
+
+num_vars
+fact_vars
+```
+
+
+### 3.2.2 Numeric vs Numeric (Scatterplot Matrix)
+
+Scatterplot matrices give an overview of linear relationships and potential collinearity.
+
+
+```{r scatter-numeric-numeric, fig.height=8, fig.width=8}
+# Only numeric columns we only take a subset to since we have so many variables
+set.seed(123)
+sampled_df <- cleaned_data_cc[sample(nrow(cleaned_data_cc), 20000), ]
+
+pairs(sampled_df[num_vars],
+      main = "Scatterplot Matrix (20k Sample)")
+
+```
+To examine the pairwise relationships between the numeric predictors, we created a scatterplot
+matrix using a simple random sample of 20,000 observations.  
+The full dataset contains more than 700,000 rows, and visualizing all observations would be 
+computationally prohibitive and would produce unreadable overplotted graphics.  
+Sampling is standard practice for exploratory data analysis: a random subset preserves the 
+general structure and relationships in the data while making visualization feasible.
+
+Representativeness of the Sample
+
+The 20k subset was drawn using a fixed random seed to ensure reproducibility.  
+Because the sampling was completely random and no filtering, stratification, or sorting was 
+performed beforehand, the resulting subset is representative of the full dataset for the purpose
+of visual inspection.  
+Thus, no systematic sampling bias is expected.
+
+Relationship Between `int_rate` and Numeric Predictors
+
+Inspection of the scatterplot panels involving the target variable `int_rate` reveals several 
+important patterns:
+
+- **`annual_inc` vs. `int_rate`:**  
+  There is a clear monotonic *decreasing* trend: borrowers with higher income tend to receive
+  lower interest rates.  
+  The relationship appears curved rather than strictly linear, which supports later use of 
+  log-transformations for income-related variables.
+
+- **`dti` vs. `int_rate`:**  
+  Higher debt-to-income ratios are associated with higher interest rates.  
+  The pattern is wedge-shaped rather than linear, indicating mild non-linearity.
+
+- **`inq_last_6mths` vs. `int_rate`:**  
+  Being a discrete count variable, the scatter shows vertical stacks at integer values.  
+  Borrowers with multiple recent inquiries appear to have slightly higher interest rates on 
+  average, but the relationship is stepwise rather than linear.
+
+- **`loan_amnt` vs. `int_rate`:**  
+  Only a weak, diffuse trend is visible.  
+  Loan amount alone does not strongly determine the interest rate.
+
+- **Monetary balance variables (e.g., `revol_bal_log`, `tot_cur_bal_log`, `total_rev_hi_lim_log`):**  
+  These log-transformed features show mild upward associations with `int_rate`.  
+  The transformation removes extreme skewness, and the resulting relationships are smooth,
+  monotonic, and appropriate for linear modelling.
+
+Overall, `int_rate` exhibits mostly monotonic—but not always linear—relationships with its predictors.
+Log-transformation of heavily skewed monetary variables appears justified.
+
+Relationships Between Predictors (Multicollinearity Considerations)
+
+The scatterplot matrix also highlights several strong associations *between* predictors:
+
+- **`open_acc` and `total_acc`:**  
+  These variables are tightly and linearly related, forming a narrow diagonal band.  
+  This reflects the inherent constraint that open accounts are a subset of total accounts.  
+  The strong correlation suggests potential multicollinearity if both are included in a regression
+  model.
+
+- **Credit exposure variables (`revol_bal_log`, `tot_cur_bal_log`, `total_rev_hi_lim_log`):**  
+  These features exhibit strong positive relationships with one another, indicating they measure
+  similar underlying borrower characteristics.  
+  Their inclusion together in an OLS model may inflate variance inflation factors (VIF), and
+  variable selection or dimensionality reduction may be appropriate.
+
+- **Loan-related variables (`loan_amnt`, `funded_amnt`, etc.):**  
+  These (if present) often show near-linear relationships, as they represent closely related
+  quantities in the LendingClub dataset.
+
+Implications for Modelling
+
+The scatterplot matrix provides several actionable insights:
+
+1. **Log-transformations** for skewed monetary variables (e.g., balances, limits) produce
+   more symmetric distributions and clearer relationships.
+2. Several predictors show **non-linear** relationships with the target, which may motivate
+   transformations or the use of non-linear modelling components.
+3. Some features exhibit **strong multicollinearity**, suggesting that variable selection,
+   removal, or regularization (e.g., ridge/lasso) will be necessary.
+4. Certain variables (e.g., `inq_last_6mths`) behave more like discrete categories than
+   continuous linear predictors and may require appropriate encoding.
+
+Overall, the scatterplot matrix confirms that, while linear regression remains viable, careful
+feature engineering—particularly transformations and removal or consolidation of correlated
+features—is needed to respect the assumptions of the linear model and prevent instabilit
+
+### 3.2.3 Factor vs Numeric (Boxplots)
+
+Here we loop over all combinations of factor × numeric.  
+Boxplots show how the distribution of a numeric variable changes across categories.
+
+
+```{r factor-numeric-boxplots, eval=FALSE}
+# WARNING: This creates MANY plots due to many variables.
+# You can set `eval = TRUE` if you want them all to actually render.  
+# For reports, you might instead manually choose a subset of clinically or financially relevant variables.
+for (f in fact_vars) {
+  for (v in num_vars) {
+    boxplot(cleaned_data_cc[[v]] ~ cleaned_data_cc[[f]],
+            xlab = f,
+            ylab = v,
+            main = paste(v, "by", f),
+            las = 2)
+  }
+}
+```
+
+
+To investigate how numeric variables behave across categories of key factors, we produced a set
+of boxplots for each combination of:
+
+- **Factors:** `term`, `emp_length`, `home_ownership`, `verification_status`, `purpose`,
+  `addr_state`, `delinq_2yrs_cat`, `delinq_recency`, `acc_now_delinq_bin`,
+  `major_derog_recency`
+- **Numeric variables:** `loan_amnt`, `int_rate`, `annual_inc`, `dti`, `inq_last_6mths`,
+  `open_acc`, `total_acc`, `log_loan_amnt`, `revol_bal_log`, `tot_cur_bal_log`,
+  `total_rev_hi_lim_log`
+
+All plots were generated **before any train/validation/test split** using the complete–case
+dataset. This ensures that the visual patterns reflect the full data and are not affected by
+downstream splitting or imputation.
+
+Below we summarise the main findings factor by factor and discuss their modelling implications,
+especially with respect to **linearity of the target `int_rate`** and potential **redundancy
+or multicollinearity** among numeric predictors.
+
+Term (36 vs 60 months)
+
+- **`loan_amnt` by `term`:**  
+  60-month loans have clearly higher median and upper quartile loan amounts than 36-month loans,
+  with a wider spread and more high–value outliers. This confirms that longer terms are used for
+  larger loans.
+- **`int_rate` by `term`:**  
+  60-month loans also show higher median interest rates and a wider interquartile range. The
+  difference between the two terms is substantial and systematic, indicating that `term` is an
+  important categorical predictor of `int_rate`.
+- **Other numeric variables:**  
+  Distributions of `annual_inc`, `dti`, `inq_last_6mths`, `open_acc`, `total_acc` and the
+  log-transformed balance/limit variables are broadly similar between terms, with only minor
+  shifts in medians.
+
+**Implication:**  
+`term` should be kept as a **factor** in the regression model, as it captures a clear
+non-linear effect on `int_rate` that cannot be represented well by a simple linear trend.
+The association between `term` and `loan_amnt` suggests some dependence but not critical
+multicollinearity.
+
+Employment Length (`emp_length`)
+
+- **`int_rate` by `emp_length`:**  
+  The medians and IQRs of `int_rate` are very similar across all employment-length categories
+  (<1 year to 10+ years). There is no strong monotone pattern; if anything, differences are small
+  and irregular.
+- **Other numeric variables:**  
+  `annual_inc`, `open_acc`, `total_acc`, and the log balance/limit variables tend to increase
+  slightly with longer employment, but the changes are gradual and noisy.  
+  `dti` and `inq_last_6mths` show very similar distributions across categories.
+
+**Implication:**  
+`emp_length` appears to have **weak predictive power** for `int_rate`. It can still be retained
+for completeness or domain reasons, but we should not expect a strong linear or ordered effect.
+Given the many categories, we should be cautious about over-parameterisation.
+
+Home Ownership (`home_ownership`)
+
+- **`int_rate` by `home_ownership`:**  
+  Median interest rates differ only modestly between `RENT`, `MORTGAGE`, and `OWN`. The
+  differences are small compared to within-group variability. Rare categories such as `NONE`,
+  `OTHER` and `ANY` are based on few observations and show unstable boxplots.
+- **`loan_amnt` and `annual_inc` by `home_ownership`:**  
+  Borrowers with a mortgage or who own their home tend to have slightly higher incomes and loan
+  amounts than renters, as expected.
+- **Other numeric variables:**  
+  The distributions of `dti`, `inq_last_6mths`, `open_acc`, `total_acc` and log balances are
+  broadly similar across home-ownership types.
+
+**Implication:**  
+`home_ownership` may have **limited incremental effect** on `int_rate` once income and other
+variables are included. 
+
+Verification Status (`verification_status`)
+
+- **`int_rate` by `verification_status`:**  
+  The median interest rates for `Not Verified`, `Source Verified`, and `Verified` are close, with
+  only small shifts between groups. The effect is weak and not clearly monotonic.
+- **`annual_inc` and `loan_amnt`:**  
+  Verified borrowers tend to have slightly higher incomes and loan amounts, but with substantial
+  overlap between groups.
+- **Other numeric variables:**  
+  No strong separation is visible; distributions are largely similar.
+
+**Implication:**  
+`verification_status` appears to be a **weak categorical predictor** of `int_rate`. It can be
+kept as a factor but is unlikely to explain a large fraction of the variance.
+
+Loan Purpose (`purpose`)
+
+- **`int_rate` by `purpose`:**  
+  There are visible differences in median rates across purposes. Categories such as
+  `small_business`, `educational`, and sometimes `renewable_energy` show higher typical
+  interest rates, whereas `credit_card` and `debt_consolidation` are more central. Within each
+  category, variability is still large.
+- **`loan_amnt` and `log_loan_amnt`:**  
+  Some purposes (e.g. `home_improvement`, `major_purchase`, `small_business`) have slightly
+  higher loan amounts than others.
+- **Other numeric variables:**  
+  Differences in `dti`, `annual_inc`, and the balance/limit variables across purposes are present
+  but not extreme.
+
+**Implication:**  
+`purpose` is a **meaningful categorical predictor** of `int_rate` and should be included as a
+factor. Because it has many categories, there is a trade-off between interpretability and model
+complexity; very rare purposes could be grouped into an "other" category if needed.
+
+State of Residence (`addr_state`)
+
+- **`int_rate` by `addr_state`:**  
+  Median interest rates vary across states, but the differences are moderate and confidence for
+  small states is low due to limited sample sizes.
+- **Other numeric variables:**  
+  Income, loan amount and account variables show some state-to-state variation but also large
+  overlap.
+
+**Implication:**  
+`addr_state` has **very high cardinality** and would introduce a large number of dummy variables
+in a linear regression model, with limited clear structure in the boxplots. To avoid
+over-parameterisation and potential overfitting, it is reasonable either to exclude `addr_state`
+from the regression model or to replace it by a coarser regional grouping if geographic effects
+are of specific interest.
+
+Delinquency History (`delinq_2yrs_cat`, `delinq_recency`)
+
+- **`int_rate` by `delinq_2yrs_cat`:**  
+  Borrowers with more past delinquencies (category `3+`) tend to have somewhat higher median
+  interest rates than those with zero delinquencies, but the effect is modest and the higher
+  categories are relatively rare.
+- **`int_rate` by `delinq_recency`:**  
+  More recent delinquencies are associated with higher typical interest rates; borrowers with
+  `none` or very old delinquencies tend to have lower rates. The pattern is roughly monotone
+  across the ordered recency categories.
+- **Other numeric variables:**  
+  Delinquency categories are also associated with slightly higher `dti`, higher `inq_last_6mths`,
+  and somewhat different balance distributions, consistent with higher-risk profiles.
+
+**Implication:**  
+Delinquency features provide **risk-related information** and show a qualitatively sensible
+relationship with `int_rate` (more and more recent delinquencies → higher rates). They are good
+candidates to keep as **ordered factors** in the model. Because the higher-risk categories are
+rare, their coefficients may have larger uncertainty.
+
+Current Delinquency (`acc_now_delinq_bin`)
+
+- **`int_rate` by `acc_now_delinq_bin`:**  
+  The group with at least one currently delinquent account (`1`) tends to have slightly higher
+  interest rates, but the group is very small compared to the non-delinquent (`0`) group.
+- **Other numeric variables:**  
+  The delinquent group also shows somewhat higher `dti` and different balance patterns, again in
+  line with a higher-risk profile.
+
+**Implication:**  
+`acc_now_delinq_bin` behaves like a **rare high-risk flag**. It can be retained as a binary
+indicator, but its effect size should be interpreted cautiously due to the small number of
+positive cases.
+
+Major Derogatory Events (`major_derog_recency`)
+
+- **`int_rate` by `major_derog_recency`:**  
+  Borrowers with more recent major derogatory events tend to have somewhat higher interest
+  rates than those with no such events (`none`), although differences between non-empty
+  categories are not very pronounced.
+- **Other numeric variables:**  
+  As with other delinquency-based factors, higher-risk categories often coincide with slightly
+  higher `dti`, more inquiries, and higher outstanding balances.
+
+**Implication:**  
+`major_derog_recency` appears to capture additional credit-risk information and can be used as
+an ordered factor. As before, rarer categories may lead to imprecise coefficient estimates.
+
+**Summary and Impact on Linearity / Multicollinearity**
+
+From the factor–numeric boxplots we conclude:
+
+- Several factors (`term`, `purpose`, delinquency-related variables) show **clear, structured
+  differences** in the distribution of `int_rate` across their levels. These are strong
+  candidates to be included as categorical (often ordered) predictors in the linear regression
+  model.
+- Other factors (`emp_length`, `home_ownership`, `verification_status`) show only **weak
+  differences** in `int_rate` and may contribute relatively little explanatory power once
+  stronger predictors are included.
+- The log-transformed monetary variables (`log_loan_amnt`, `revol_bal_log`, `tot_cur_bal_log`,
+  `total_rev_hi_lim_log`) have broadly similar patterns across many factors, suggesting they
+  measure overlapping aspects of credit exposure. This supports later checks for
+  **multicollinearity** using VIFs and potentially dropping or combining highly redundant
+  variables.
+- High-cardinality factors such as `addr_state` increase model complexity substantially and are
+  likely to be excluded or simplified to avoid overfitting.
+
+Overall, the boxplots provide a qualitative understanding of how `int_rate` varies across
+important borrower and loan characteristics and highlight where categorical effects and
+potential multicollinearity need to be considered in the subsequent linear regression modelling.
+
+## 3.3 Correlation Structure of Numeric Variables
+
+We inspect the correlation matrix to:
+
+- identify **strong linear relationships**,
+- detect possible **multicollinearity risk** and **redundant variables**.
+
+
+```{r corrplot-global, fig.height=7, fig.width=7}
+cor_mat <- cor(cleaned_data_cc[num_vars], use = "pairwise.complete.obs")
+
+corrplot(cor_mat,
+         method = "color",
+         type   = "lower",
+         tl.cex = 0.7,
+         diag   = FALSE)
+```
+
+
+
+
+
+
+---
+
+# 4. Train / Validation / Test Split (70/15/15)
+
+Now we split the **complete-case data** into train, validation and test sets with:
+
+- seed `123` for reproducibility,
+- **70% train, 15% validation, 15% test**.
+
+We do this split **before** any model fitting in order to:
+
+- prevent information leakage from test into training,
+- reserve test data for final unbiased performance assessment.
+
+
+```{r split-data}
+set.seed(123)
+
+n <- nrow(cleaned_data_cc)
+indices <- seq_len(n)
+
+# 70% train
+train_size <- floor(0.7 * n)
+train_index <- sample(indices, size = train_size)
+
+remaining <- setdiff(indices, train_index)
+
+# Split remaining into 15% val, 15% test (roughly equal halves)
+val_size <- floor(0.5 * length(remaining))
+val_index  <- sample(remaining, size = val_size)
+test_index <- setdiff(remaining, val_index)
+
+train <- cleaned_data_cc[train_index, ]
+val   <- cleaned_data_cc[val_index, ]
+test  <- cleaned_data_cc[test_index, ]
+
+cat("Train rows:", nrow(train), "\n")
+cat("Validation rows:", nrow(val), "\n")
+cat("Test rows:", nrow(test), "\n")
+```
+
+
+Note: In this document we **do not perform imputation**, because that will be done in a separate workflow. For the diagnostics here, we already restricted to complete cases via `na.omit()`.
+
+---
+
+# 5. EDA on Training Set (Post-Split)
+
+We now repeat **scatterplots and correlation analysis on the training set only**, as this is the data on which the model will be trained and diagnostics evaluated.
+
+## 5.1 Scatterplot Matrix on Training Set
+
+
+```{r train-scatter-matrix, fig.height=8, fig.width=8}
+train_num_vars <- names(train)[sapply(train, is.numeric)]
+
+pairs(train[train_num_vars],
+      main = "Scatterplot Matrix of Numeric Variables (Train)")
+```
+
+
+## 5.2 Correlation Matrix on Training Set
+
+
+```{r train-corrplot, fig.height=7, fig.width=7}
+train_cor <- cor(train[train_num_vars], use = "pairwise.complete.obs")
+
+corrplot(train_cor,
+         method = "color",
+         type   = "lower",
+         tl.cex = 0.7,
+         diag   = FALSE)
+```
+
+
+This provides a more accurate picture of the correlations relevant for the linear regression model that will be fitted on the training data.
+
+---
+
+# 6. Linear Regression Model on Training Set
+
+We now fit a **multiple linear regression model** using the training data:
+
+- Response: `int_rate` (assumed to be present in `train`).
+- Predictors: all remaining variables (`.`).
+
+
+```{r fit-lm}
+# Ensure int_rate is numeric
+stopifnot("int_rate" %in% names(train))
+stopifnot(is.numeric(train$int_rate))
+
+lm_fit <- lm(int_rate ~ ., data = train)
+summary(lm_fit)
+```
+
+The summary output provides coefficient estimates, standard errors, t-values and p-values, as well as overall model fit metrics (R², adjusted R², F-statistic).
+
+---
+
+# 7. Mandatory Linear Regression Checks
+
+According to best practice and your slides, we must check:
+
+1. **Linearity**  
+2. **Homoscedasticity (constant variance)**  
+3. **Normality of residuals**  
+4. **Multicollinearity (VIF)**  
+5. **Influential points / leverage**
+
+We perform all of these on the **training model** `lm_fit`.
+
+## 7.1 Linearity
+
+We check linearity in two ways:
+
+1. **Residuals vs Fitted**: to see if systematic patterns remain.  
+2. **Residuals vs each predictor**: to see if there are non-linear relationships.  
+3. **Component + Residual (Partial Residual) plots**: for each predictor.
+
+### 7.1.1 Residuals vs Fitted
+
+
+```{r residuals-vs-fitted, fig.height=5, fig.width=6}
+plot(lm_fit, which = 1)  # Residuals vs Fitted
+```
+
+
+We look for **no obvious pattern** (no curves, no funnel shape).  
+Systematic curvature would suggest that the relationship between predictors and `int_rate` is not purely linear.
+
+### 7.1.2 Residuals vs Each Numeric Predictor
+
+
+```{r residuals-vs-predictors, fig.height=5, fig.width=6}
+train$residuals <- resid(lm_fit)
+
+numeric_predictors <- setdiff(train_num_vars, "int_rate")
+
+for (v in numeric_predictors) {
+  plot(train[[v]], train$residuals,
+       xlab = v,
+       ylab = "Residuals",
+       main = paste("Residuals vs", v))
+  abline(h = 0, col = "red", lty = 2)
+}
+```
+
+Here we again look for:
+
+- random scatter around 0,
+- no clear curve (e.g. U-shape) that might suggest a transformation is needed.
+
+### 7.1.3 Partial Residual (Component + Residual) Plots
+
+Partial residual plots help assess the marginal linearity of each predictor **after** adjusting for the others.
+
+
+```{r partial-residual-plots, fig.height=6, fig.width=6}
+crPlots(lm_fit)
+```
+
+
+If the red smooth line deviates strongly from the dashed straight line, this indicates non-linearity for that predictor.
+
+---
+
+## 7.2 Homoscedasticity (Constant Variance)
+
+We check if the variance of residuals is roughly constant across the range of fitted values.
+
+### 7.2.1 Visual Check: Residuals vs Fitted (again)
+
+The same plot used in linearity also reflects homoscedasticity:
+
+
+```{r homoscedasticity-visual, fig.height=5, fig.width=6}
+plot(lm_fit, which = 1)
+```
+
+
+We look for:
+
+- similar spread of residuals across the whole range of fitted values,
+- **no funnel shape** (widening or narrowing).
+
+### 7.2.2 Optional: Breusch-Pagan Test
+
+We can additionally perform a formal test for heteroscedasticity.
+
+
+```{r breusch-pagan}
+bptest(lm_fit)
+```
+
+
+- A **non-significant** p-value (> 0.05) suggests no strong evidence against homoscedasticity.
+- A **significant** p-value suggests heteroscedasticity; robust standard errors or transformations may be considered.
+
+---
+
+## 7.3 Normality of Residuals
+
+Normality is mainly relevant for inference (validity of t-tests and confidence intervals), not as much for prediction accuracy.
+
+### 7.3.1 Q–Q Plot of Standardized Residuals
+
+
+```{r qqplot-residuals, fig.height=5, fig.width=6}
+plot(lm_fit, which = 2)  # Normal Q-Q plot
+```
+
+
+We expect the points to lie approximately on the line.  
+Systematic deviations at the tails indicate heavier or lighter tails than the normal distribution.
+
+Alternatively, we can explicitly compute standardized residuals:
+
+
+```{r qqplot-residuals-manual, fig.height=5, fig.width=6}
+res_std <- rstandard(lm_fit)
+qqnorm(res_std)
+qqline(res_std, col = "red")
+```
+
+
+---
+
+## 7.4 Multicollinearity (VIF)
+
+We use the **Variance Inflation Factor (VIF)** to diagnose multicollinearity among predictors.
+
+- VIF ≈ 1: no correlation with other predictors  
+- VIF > 5: moderate multicollinearity  
+- VIF > 10: potentially problematic
+
+
+```{r vif}
+vif_values <- vif(lm_fit)
+vif_values
+```
+
+
+If we find very high VIF values, we may consider:
+
+- removing or combining redundant predictors,
+- applying regularization methods (ridge, lasso) in a separate modelling pipeline.
+
+---
+
+## 7.5 Influential Points and Leverage
+
+Influential points can strongly affect the fitted regression line.
+
+### 7.5.1 Cook’s Distance Plot
+
+
+```{r cooks-distance, fig.height=5, fig.width=6}
+plot(lm_fit, which = 4)  # Cook's distance
+```
+
+
+Points with much larger Cook’s distance than the rest deserve closer inspection.
+
+### 7.5.2 Residuals vs Leverage with Cook’s Contours
+
+
+```{r residuals-vs-leverage, fig.height=5, fig.width=6}
+plot(lm_fit, which = 5)
+```
+
+
+Points in the top right corner with high leverage and large residuals may be **highly influential**.  
+We would discuss whether these are:
+
+- data errors (to be corrected or removed),
+- genuine extreme but valid cases (to be kept, possibly with robust methods).
+
+---
+
+# 8. Summary
+
+In this R Markdown, we:
+
+1. Started from `cleaned_data` and restricted to **complete cases** for diagnostic purposes.
+2. Followed the slides’ recommendations for **EDA**:
+   - histograms (Hmisc),
+   - scatterplots / boxplots / mosaic-like plots for relationships between variables,
+   - correlation structure using `corrplot`.
+3. Created a **train / validation / test split** (70/15/15, seed 123).
+4. Repeated **scatterplots and correlation analysis** on the **training set**.
+5. Fit a **multiple linear regression model** on the training data only.
+6. Performed all **mandatory linear regression checks**:
+   - linearity (residuals vs fitted, residuals vs predictors, partial residual plots),
+   - homoscedasticity (residuals vs fitted, optional Breusch-Pagan test),
+   - normality of residuals (Q–Q plot),
+   - multicollinearity (VIF),
+   - influential points (Cook’s distance, residuals vs leverage).
+
+This structure matches best practice and is consistent with the workflow taught in the course. You can now plug in your actual variable names (e.g., focusing on clinically or financially relevant predictors) and interpret the diagnostics in the context of your LendingClub project.

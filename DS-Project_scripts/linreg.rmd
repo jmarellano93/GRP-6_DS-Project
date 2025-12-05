@@ -1,35 +1,13 @@
-df is called cleaned_data
+To Do
+- do not look at plots on all data but only on test set so there is no data leakage
+- Fix income distributions to log_normal and use this
 
+C. Misinterpretation of "Non-linearity" in Factors
 
-use hmisc for histograms
-
-scatterplots of
-numeric vs numeric
-factor vs numeric (boxplot)
-factor vs factor (mosaic-like plot)
-
-correlation structure with corrplot (multicollinearit risk and redundant variables) use corrplot
-
-train val test split (seed 123, 70/15/15)
-
-
-omit na since imputation is done by other programmer and will be used later
-
-
-repeat scatterplots and correlation matrix
-
-fit lin reg on train only
-
-check linearity (scatterplot of residual vs each predictor; partial residual plot)
-
-check homoscedasticity
-
-check normality of residuals with QQ plot
-
-check multicollinearity with VIF
-
-check influaential points (leverage)
-
+Issue: In the discussion of term (36 vs 60 months), the text says: "captures a clear non-linear effect... that cannot be represented well by a simple linear trend." Correction: Since term is a factor (binary in this case), a linear model handles this perfectly via a dummy variable (intercept shift). This is not "non-linearity" in the mathematical sense (like x2 or log(x)); it is a discrete effect. The linear model is perfectly capable of modeling this.
+  
+  
+  
 
 ```{r}
 # Define the full path to the saved CSV file
@@ -44,7 +22,8 @@ cleaned_data <- read.csv(input_file_path)
 library(Hmisc)     # histograms, general EDA
 library(corrplot)  # correlation plots
 library(ggplot2)   # nicer plots & loops
-      # VIF, partial residual plots
+library(tidyverse)
+library(car)       #VIF, partial residual plots, alternative and faster would be library(performance and use check_collinearity)
 #library(lmtest)    # Breusch-Pagan test (optional)
 ```
 # 1. Data and Goal
@@ -481,6 +460,131 @@ corrplot(cor_mat,
          diag   = FALSE)
 ```
 
+Correlation Matrix Interpretation
+
+The correlation matrix visualises pairwise Pearson correlations among all numeric predictors and 
+the target variable `int_rate`. Pearson correlation requires numeric, continuous variables; 
+categorical variables are therefore excluded.
+
+The heatmap reveals several noteworthy linear relationships, both with the target variable and 
+among the predictors.
+
+Correlations With the Target `int_rate`
+
+- **`annual_inc` (Income):**  
+  Displays a **moderate negative correlation** with `int_rate`.  
+  Borrowers with higher income tend to receive lower interest rates.  
+  This relationship supports the earlier visual findings that income is a meaningful predictor, 
+  though not strictly linear (log-transformation improves linearity).
+
+- **`dti` (Debt-to-Income Ratio):**  
+  Shows a **small positive correlation** with `int_rate`.  
+  Higher DTI values are associated with slightly higher interest rates, as expected for higher-risk 
+  borrowers.
+
+- **`inq_last_6mths`:**  
+  Weak positive correlation. Borrowers with more recent credit inquiries tend to have marginally 
+  higher interest rates. The effect size is small because this variable is discrete and skewed.
+
+- **`log_loan_amnt`:**  
+  Shows a mild positive correlation with `int_rate`, suggesting larger loans are associated with 
+  slightly higher interest rates. The log transformation stabilises the skew and gives a more 
+  interpretable relationship.
+
+- **Credit utilisation / credit exposure variables:**  
+  `revol_bal_log`, `tot_cur_bal_log`, and `total_rev_hi_lim_log` all have **weak-to-moderate positive 
+  correlations** with `int_rate`.  
+  Borrowers with higher balances and higher limits tend to pay somewhat higher interest rates.  
+  The associations are monotonic but not very strong, which is typical in real credit datasets where 
+  many risk factors influence pricing.
+
+- **Weak/non-informative correlations:**  
+  `open_acc` and `total_acc` show near-zero correlation with the target, suggesting little linear 
+  influence on interest rate.
+
+**Summary:**  
+`int_rate` correlates meaningfully (but moderately) with income, DTI, recent inquiries, and the 
+various log-transformed exposure variables. These patterns confirm that the variables carry relevant 
+risk information but no single numeric predictor on its own explains a large portion of the variance.
+
+
+Correlations Among the Predictors
+
+The matrix shows several strong internal relationships among numeric predictors:
+
+- **`open_acc` and `total_acc`:**  
+  These two variables are **highly correlated**, forming a distinct bright-blue block in the matrix.  
+  This is expected because total accounts naturally include open accounts. Including both in the 
+  linear model may induce multicollinearity and inflate VIF values.
+
+- **Credit exposure variables:**  
+  `revol_bal_log`, `tot_cur_bal_log`, and `total_rev_hi_lim_log` form the largest and clearest 
+  high-correlation cluster. All three measure related aspects of revolving utilisation and overall 
+  credit exposure.  
+  Their strong pairwise correlations indicate redundancy.  
+  Including all of them in an OLS model will almost certainly cause **multicollinearity**.  
+  Variable selection or dimensionality reduction may be appropriate.
+
+- **`log_loan_amnt`:**  
+  Moderately correlated with the credit exposure block.  
+  This suggests larger loans tend to coexist with larger balances and higher credit limits.  
+  The correlations are not extreme but should be monitored with VIF.
+
+- **`annual_inc`:**  
+  Shows mild positive correlation with exposure variables and loan amount, capturing socioeconomic 
+  structure. These correlations are not problematic.
+
+**Summary:**  
+The correlation matrix highlights two main multicollinearity sources:  
+(1) `open_acc` vs. `total_acc`, and  
+(2) the block of log-transformed balance/limit variables.  
+These will require attention during VIF analysis and feature selection.
+
+
+```{r}
+library(fastDummies)
+set.seed(123)
+factors_of_interest <- c("term", 
+                         "emp_length", 
+                        "home_ownership",
+                         "verification_status", 
+                         "delinq_2yrs_cat", 
+                         "delinq_recency", 
+                         "acc_now_delinq_bin", 
+                         "major_derog_recency"
+                        )
+
+# Keep only variables that exist in factors of interest
+df_no_addr_state <- cleaned_data_cc[, c(num_vars, factors_of_interest)]
+
+sample_idx <- sample(nrow(df_no_addr_state), 10000)
+df_sample <- df_no_addr_state[sample_idx, ]
+
+# Dummy encode ONLY the selected categorical variables
+df_dummy <- dummy_cols(df_sample,
+                       remove_first_dummy = TRUE,
+                       remove_selected_columns = TRUE)
+
+# Keep numeric columns only
+numeric_all <- df_dummy[, sapply(df_dummy, is.numeric)]
+
+# Compute correlation
+cor_mat <- cor(numeric_all, use = "pairwise.complete.obs")
+
+# Plot correlation matrix
+corrplot(cor_mat,
+         method = "color",
+         type   = "lower",
+         tl.cex = 0.7,   # readable now
+         diag   = FALSE)
+```
+```{r}
+# Get correlations of all variables with int_rate
+cor_with_int <- cor_mat["int_rate", ]
+sort(abs(cor_with_int), decreasing = TRUE)
+cor_with_int
+
+```
 
 
 
@@ -578,211 +682,550 @@ We now fit a **multiple linear regression model** using the training data:
 stopifnot("int_rate" %in% names(train))
 stopifnot(is.numeric(train$int_rate))
 
-lm_fit <- lm(int_rate ~ ., data = train)
+lm_fit <- lm(int_rate ~ . - addr_state - earliest_cr_line_date - last_credit_pull_d_date,
+             data = train)
+summary(lm_fit)
+```
+We fitted a linear regression model with the pre-selected columns. Based on the correlation plot and the fact that we have a high number of features, even more increased due to OneHotEncoding, we know that the goodness of fit of the model will be bad. The summary of the model shows an adjusted R-squared of 0.4755, which is worse than a random classifier.
+
+Now let's kick out some of the highly colinear variables. We can identify these variables using previous knowledge and aiding our decision by calculating the Variance Inflation Factor (VIF).
+
+```{r}
+# Calculate VIF
+vif_values <- vif(lm_fit)
+vif_values
+```
+VIF of more than 5 indicates a potential multicollinearity problem. We see this for delinq_recency. We exclude this column and retrain and look at vif.
+```{r}
+stopifnot("int_rate" %in% names(train))
+stopifnot(is.numeric(train$int_rate))
+
+lm_fit <- lm(int_rate ~ . - addr_state - earliest_cr_line_date - last_credit_pull_d_date - delinq_recency,
+             data = train)
 summary(lm_fit)
 ```
 
-The summary output provides coefficient estimates, standard errors, t-values and p-values, as well as overall model fit metrics (R², adjusted R², F-statistic).
-
----
-
-# 7. Mandatory Linear Regression Checks
-
-According to best practice and your slides, we must check:
-
-1. **Linearity**  
-2. **Homoscedasticity (constant variance)**  
-3. **Normality of residuals**  
-4. **Multicollinearity (VIF)**  
-5. **Influential points / leverage**
-
-We perform all of these on the **training model** `lm_fit`.
-
-## 7.1 Linearity
-
-We check linearity in two ways:
-
-1. **Residuals vs Fitted**: to see if systematic patterns remain.  
-2. **Residuals vs each predictor**: to see if there are non-linear relationships.  
-3. **Component + Residual (Partial Residual) plots**: for each predictor.
-
-### 7.1.1 Residuals vs Fitted
-
-
-```{r residuals-vs-fitted, fig.height=5, fig.width=6}
-plot(lm_fit, which = 1)  # Residuals vs Fitted
+```{r}
+vif_values <- vif(lm_fit)
+vif_values
 ```
+The adjusted R2 is similar. Furthermore we see that loan_amnt and log_loan_amnt are highly colinear, which is logical and already seen in the correlation matrix. We make two linear_regression models, one with loan_amnt and one with log_loan_amnt and compare the two models
 
+```{r}
+stopifnot("int_rate" %in% names(train))
+stopifnot(is.numeric(train$int_rate))
 
-We look for **no obvious pattern** (no curves, no funnel shape).  
-Systematic curvature would suggest that the relationship between predictors and `int_rate` is not purely linear.
+lm_fit <- lm(int_rate ~ . - addr_state - earliest_cr_line_date - last_credit_pull_d_date - delinq_recency - loan_amnt,
+             data = train)
+summary(lm_fit)
 
-### 7.1.2 Residuals vs Each Numeric Predictor
-
-
-```{r residuals-vs-predictors, fig.height=5, fig.width=6}
-train$residuals <- resid(lm_fit)
-
-numeric_predictors <- setdiff(train_num_vars, "int_rate")
-
-for (v in numeric_predictors) {
-  plot(train[[v]], train$residuals,
-       xlab = v,
-       ylab = "Residuals",
-       main = paste("Residuals vs", v))
-  abline(h = 0, col = "red", lty = 2)
-}
-```
-
-Here we again look for:
-
-- random scatter around 0,
-- no clear curve (e.g. U-shape) that might suggest a transformation is needed.
-
-### 7.1.3 Partial Residual (Component + Residual) Plots
-
-Partial residual plots help assess the marginal linearity of each predictor **after** adjusting for the others.
-
-
-```{r partial-residual-plots, fig.height=6, fig.width=6}
-crPlots(lm_fit)
-```
-
-
-If the red smooth line deviates strongly from the dashed straight line, this indicates non-linearity for that predictor.
-
----
-
-## 7.2 Homoscedasticity (Constant Variance)
-
-We check if the variance of residuals is roughly constant across the range of fitted values.
-
-### 7.2.1 Visual Check: Residuals vs Fitted (again)
-
-The same plot used in linearity also reflects homoscedasticity:
-
-
-```{r homoscedasticity-visual, fig.height=5, fig.width=6}
-plot(lm_fit, which = 1)
-```
-
-
-We look for:
-
-- similar spread of residuals across the whole range of fitted values,
-- **no funnel shape** (widening or narrowing).
-
-### 7.2.2 Optional: Breusch-Pagan Test
-
-We can additionally perform a formal test for heteroscedasticity.
-
-
-```{r breusch-pagan}
-bptest(lm_fit)
-```
-
-
-- A **non-significant** p-value (> 0.05) suggests no strong evidence against homoscedasticity.
-- A **significant** p-value suggests heteroscedasticity; robust standard errors or transformations may be considered.
-
----
-
-## 7.3 Normality of Residuals
-
-Normality is mainly relevant for inference (validity of t-tests and confidence intervals), not as much for prediction accuracy.
-
-### 7.3.1 Q–Q Plot of Standardized Residuals
-
-
-```{r qqplot-residuals, fig.height=5, fig.width=6}
-plot(lm_fit, which = 2)  # Normal Q-Q plot
-```
-
-
-We expect the points to lie approximately on the line.  
-Systematic deviations at the tails indicate heavier or lighter tails than the normal distribution.
-
-Alternatively, we can explicitly compute standardized residuals:
-
-
-```{r qqplot-residuals-manual, fig.height=5, fig.width=6}
-res_std <- rstandard(lm_fit)
-qqnorm(res_std)
-qqline(res_std, col = "red")
-```
-
-
----
-
-## 7.4 Multicollinearity (VIF)
-
-We use the **Variance Inflation Factor (VIF)** to diagnose multicollinearity among predictors.
-
-- VIF ≈ 1: no correlation with other predictors  
-- VIF > 5: moderate multicollinearity  
-- VIF > 10: potentially problematic
-
-
-```{r vif}
 vif_values <- vif(lm_fit)
 vif_values
 ```
 
+```{r}
+stopifnot("int_rate" %in% names(train))
+stopifnot(is.numeric(train$int_rate))
 
-If we find very high VIF values, we may consider:
+lm_fit <- lm(int_rate ~ . - addr_state - earliest_cr_line_date - last_credit_pull_d_date - delinq_recency - log_loan_amnt,
+             data = train)
+summary(lm_fit)
 
-- removing or combining redundant predictors,
-- applying regularization methods (ridge, lasso) in a separate modelling pipeline.
+vif_values <- vif(lm_fit)
+vif_values
+```
+The R2 between the two models are very similar. Therefore we will stick with the original, non-log-transformed, column 'loan_amnt'.
+Furtermore we see that home_ownership does not have significant p-values. Since it also had a weak correlation in the correlation matrix, we will exclude this column as well.
+```{r}
+stopifnot("int_rate" %in% names(train))
+stopifnot(is.numeric(train$int_rate))
 
----
+lm_fit <- lm(int_rate ~ . - addr_state - earliest_cr_line_date - last_credit_pull_d_date - delinq_recency - log_loan_amnt - home_ownership,
+             data = train)
+summary(lm_fit)
 
-## 7.5 Influential Points and Leverage
+vif_values <- vif(lm_fit)
+vif_values
+```
+We still don't see a lot of difference in the adjusted R2. We therefore drop the columns which didn't show meaningful predictive value in the histograms and scatterplots. These columns are open_acc, total_acc, emp_length, home_ownership and verification_status.
+```{r}
+exclude_vars <- c(
+  "addr_state",
+  "earliest_cr_line_date",
+  "last_credit_pull_d_date",
+  "delinq_recency",
+  "log_loan_amnt",
+  "home_ownership",
+  "emp_length",
+  "open_acc",
+  "total_acc",
+  "major_derog_recency",
+  "verification_status"
+)
 
-Influential points can strongly affect the fitted regression line.
 
-### 7.5.1 Cook’s Distance Plot
+all_vars <- setdiff(names(train), exclude_vars)
+
+formula <- reformulate(all_vars[all_vars != "int_rate"], response = "int_rate")
+
+lm_fit <- lm(formula, data = train)
+summary(lm_fit)
+
+vif(lm_fit)
+
+```
+
+Let's try a lasso regression as well to see if we can improve the model with all variables included.
+```{r}
+# Remove variables you decided to exclude
+exclude_vars <- c("addr_state", "earliest_cr_line_date", "last_credit_pull_d_date")
+
+train_lasso <- train %>%
+  select(-all_of(exclude_vars))
+
+# Build model matrix (glmnet handles dummy-encoding automatically)
+X <- model.matrix(int_rate ~ ., data = train_lasso)[, -1]  # remove intercept column
+y <- train_lasso$int_rate
+
+set.seed(123)
+cv_lasso <- cv.glmnet(
+  X, y,
+  alpha = 1,          # LASSO
+  family = "gaussian",
+  nfolds = 10,
+  standardize = TRUE
+)
+
+best_lambda <- cv_lasso$lambda.min
+best_lambda
+
+lasso_model <- glmnet(X, y, alpha = 1, lambda = best_lambda)
+
+y_pred <- predict(lasso_model, X)
+
+# Compute R2
+R2_lasso <- 1 - sum((y - y_pred)^2) / sum((y - mean(y))^2)
+R2_lasso
+
+```
+
+```{r}
+coef_lasso <- coef(lasso_model)
+active_vars <- rownames(coef_lasso)[which(coef_lasso != 0)]
+active_vars
+
+```
+
+```{r}
+coef_df <- data.frame(
+  variable = rownames(coef_lasso),
+  coefficient = as.numeric(coef_lasso)
+) %>%
+  filter(variable != "(Intercept)") %>%
+  mutate(abs_coef = abs(coefficient)) %>%
+  arrange(desc(abs_coef))
+
+head(coef_df, 20)
+
+```
+
+## 4. Why Linear Regression Performs Poorly
+
+In this section we investigate why the multiple linear regression models for the
+interest rate (`int_rate`) achieve a relatively low explanatory power
+(adjusted R² ≈ 0.47).  
+The main hypothesis is that **the relationship between the features and
+`int_rate` is not linear**, so a linear model can only capture part of the
+structure.
+
+To support this, we:
+
+1. Fit a linear regression model and quantify its performance.  
+2. Use diagnostic plots to check whether the residuals behave as expected
+   under a linear relationship.  
+3. Visualise the relationship between key predictors and `int_rate` using
+   LOESS curves on a random subsample of the data.  
+4. Compare the linear model to a more flexible, nonlinear model (a GAM) on a
+   subsample to show that allowing nonlinearity clearly improves fit.
+
+Because the training set has about 500,000 rows, I use random subsamples
+for plotting and for the nonlinear comparison to keep computation and
+graphics manageable.
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(broom)
+library(mgcv)   # for a flexible nonlinear (GAM) model
+
+set.seed(123)
+```
+4.1. Baseline multiple linear regression
+We start with a reasonably rich linear regression model using the main
+continuous and categorical predictors that are available after cleaning.
+
+```{r}
+lm_fit <- lm(
+int_rate ~ loan_amnt + term + annual_inc + purpose +
+dti + inq_last_6mths +
+delinq_2yrs_cat + acc_now_delinq_bin +
+revol_bal_log + tot_cur_bal_log + total_rev_hi_lim_log,
+data = train
+)
+
+lm_summary <- summary(lm_fit)
+lm_summary$adj.r.squared
+```
+
+The adjusted R² of this model is:
+
+- **Adjusted R²:** 0.44
+
+This means that the linear model explains only about
+44 % of the variability in
+`int_rate`. Given that we use many relevant credit-risk predictors,
+this relatively low value suggests that the problem is not simply
+missing variables, but that the functional form (strict linearity)
+is too restrictive.
+
+4.2. Residual diagnostics: remaining structure after the linear fit
+If the linear model were appropriate, the residuals (observed minus fitted
+values) should look like almost random noise with no structure. Systematic
+patterns in the residuals indicate that the model misses important
+nonlinearities or interactions.
+
+Because plotting 500,000 points is not helpful, I use a random subsample
+of 20,000 observations for the diagnostics.
+```{r}
+plot_sample <- train %>%
+sample_n(20000)
+
+plot_sample$lm_fitted   <- predict(lm_fit, newdata = plot_sample)
+plot_sample$lm_residual <- plot_sample$int_rate - plot_sample$lm_fitted
+
+ggplot(plot_sample, aes(x = lm_fitted, y = lm_residual)) +
+geom_point(alpha = 0.2) +
+geom_hline(yintercept = 0, colour = "red") +
+labs(
+title = "Residuals vs Fitted (linear model)",
+x = "Fitted interest rate",
+y = "Residuals"
+)
+```
+In a well-specified linear regression, the residuals should form a homogeneous, structureless cloud around zero, with constant variance and no discernible patterns.
+However, the residual–versus–fitted plot shows clear systematic structure. The spread of the residuals changes across the range of fitted values, forming a distinct “diamond” shape: the variance is smallest near the center and increases toward the extremes. Additionally, the residuals appear in curved, slanted bands rather than being randomly dispersed. These patterns indicate heteroscedasticity and nonlinearity—strong evidence that the linear model fails to capture the true relationship between the predictors and int_rate.
+Such visible structure contradicts the assumptions of linear regression (linearity, homoscedasticity, independent residuals), and confirms that the underlying functional form is not linear. This diagnostic plot therefore supports the hypothesis that a linear model is not appropriate for modelling LendingClub interest rates.
+
+4.3 Nonlinear patterns in key predictors
+To directly test the hypothesis that `int_rate` is not linearly related to
+the predictors, I inspect the shape of the relationship for several
+important continuous variables:
+
+- loan amount (`loan_amnt`)
+- debt-to-income ratio (`dti`)
+- revolving balance (`revol_bal_log`)
+- total revolving credit limit (`total_rev_hi_lim_log`)
+
+For each variable, I plot `int_rate` against the predictor on a subsample
+of 20,000 observations and overlay two smooths:
+
+- a **LOESS curve** (flexible, capturing nonlinear trends)  
+- a **straight regression line** (the linear assumption)
+
+If the LOESS curve deviates strongly from the straight line, this
+indicates that the true relationship is nonlinear.
+
+```{r}
+cont_sample <- train %>%
+select(int_rate, loan_amnt, dti, revol_bal_log, total_rev_hi_lim_log) %>%
+sample_n(20000)
+
+plot_smooth <- function(data, xvar, xlab) {
+ggplot(data, aes_string(x = xvar, y = "int_rate")) +
+geom_point(alpha = 0.05) +
+geom_smooth(method = "loess", se = FALSE) +
+geom_smooth(method = "lm",   se = FALSE, linetype = "dashed", colour = "red") +
+labs(
+x = xlab,
+y = "Interest rate",
+title = paste("LOESS (blue) vs linear fit (red dashed) for", xlab)
+)
+}
+
+p1 <- plot_smooth(cont_sample, "loan_amnt", "Loan amount")
+p2 <- plot_smooth(cont_sample, "dti", "Debt-to-income ratio")
+p3 <- plot_smooth(cont_sample, "revol_bal_log", "Log revolving balance")
+p4 <- plot_smooth(cont_sample, "total_rev_hi_lim_log", "Log total revolving limit")
+
+p1
+p2
+p3
+p4
+```
+Across all four plots, the blue LOESS curves show clear nonlinear patterns that the straight red linear fits fail to capture. This provides strong evidence that the relationship between each predictor and int_rate is not linear.
+- Loan amount: The LOESS curve bends downward for small loans, flattens in the mid-range, and bends upward again for larger loans. This U-shaped pattern cannot be represented with a straight line, confirming nonlinearity.
+- Debt-to-income ratio (DTI): The relationship is not a constant slope: the curve is almost flat at low DTI values, increases moderately in the middle range, and becomes much steeper as DTI approaches higher values. This increasing slope contradicts the assumption of a linear effect.
+- Log revolving balance: The LOESS curve rises slightly at first and then decreases for higher values, creating an inverted-U shape. The linear model completely misses this turning point.
+- Log total revolving limit: The relationship is strongly curved: the LOESS curve first increases toward a maximum and then declines sharply, whereas the linear fit implies a strictly decreasing line. These opposite trends highlight a serious mismatch between the linear assumption and the data.
+
+These departures from linearity mean that a straight-line fit is structurally incapable of capturing the true shapes seen in the data. As a result, the linear model systematically misrepresents the underlying relationships, which explains the patterned residuals and the relatively low R². Because the true functional forms are nonlinear, the poor performance of the linear model is expected and theoretically justified.
+
+4.4 Comparison with a more flexible nonlinear model
+To further support the hypothesis that the low R² is caused by
+nonlinearity rather than by noise or missing variables, we fit a more
+flexible model on a subsample: a Generalized Additive Model (GAM).  
+The GAM allows smooth nonlinear functions of the continuous predictors
+while keeping the same set of variables.
+
+I compare its performance to the linear model on the **same subsample**
+of 50,000 rows.
+```{r}
+set.seed(123)
+sub <- train %>%
+sample_n(50000)
+
+# Linear model on the subsample
+
+lm_sub <- lm(
+int_rate ~ loan_amnt + term + annual_inc + purpose +
+dti + inq_last_6mths +
+delinq_2yrs_cat + acc_now_delinq_bin +
+revol_bal_log + tot_cur_bal_log + total_rev_hi_lim_log,
+data = sub
+)
+
+# Flexible GAM on the same predictors
+
+gam_sub <- gam(
+int_rate ~ s(loan_amnt) + s(dti) + s(revol_bal_log) +
+s(tot_cur_bal_log) + s(total_rev_hi_lim_log) +
+term + purpose + inq_last_6mths +
+delinq_2yrs_cat + acc_now_delinq_bin +
+annual_inc,   # can be kept linear here
+data = sub
+)
+
+# R2 for both models on the subsample
+
+lm_pred  <- predict(lm_sub,  newdata = sub)
+gam_pred <- predict(gam_sub, newdata = sub)
+
+r2 <- function(y, yhat) 1 - sum((y - yhat)^2) / sum((y - mean(y))^2)
+
+r2_lm_sub  <- r2(sub$int_rate, lm_pred)
+r2_gam_sub <- r2(sub$int_rate, gam_pred)
+
+c(linear_R2 = r2_lm_sub, gam_R2 = r2_gam_sub)
+```
+On the same 50,000-row subset, the models achieve the following performance:
+Linear model R²: 0.44
+GAM (nonlinear) R²: 0.48
+
+The GAM, which allows nonlinear smooths for the continuous predictors, achieves a noticeably higher R² than the linear model. While the improvement is moderate rather than dramatic, it is consistent and systematic. This indicates that part of the unexplained variance in the linear model is indeed due to nonlinear relationships that the linear specification cannot capture.
+The fact that the GAM performs better, even using the same set of predictors, provides empirical evidence that the relationship between features and int_rate is not purely linear. At the same time, the relatively small increase in R² suggests that interest-rate determination is influenced by additional factors such as policy rules, credit-grade thresholds, and noise, which neither model can capture fully.
+
+4.5. Interpretation
+- The multiple linear regression explains only about r round(lm_summary$adj.r.squared * 100)% of the variation in interest rates, despite using many relevant credit-risk features. This relatively low explanatory power suggests that the assumptions of linearity and additivity may not hold.
+- Residual diagnostics show clear, non-random patterns, including heteroscedasticity and structured bands, which indicate that the linear model does not adequately capture the underlying relationships in the data.
+- LOESS visualisations of int_rate against key continuous predictors show curved, often non-monotonic relationships, while the fitted linear trend is restricted to a straight line. These plots provide direct evidence that the true effects are nonlinear.
+- A more flexible GAM using the same predictors on a subsample achieves a moderately higher R² than the linear model. Although the improvement is not dramatic, it is consistent and systematic, demonstrating that relaxing the linearity assumption leads to a better representation of the underlying structure.
+
+Taken together, these findings support the hypothesis that there is no simple
+linear relationship between int_rate and the available predictors. Linear
+regression therefore serves as a reasonable baseline, and its relatively low R²
+is expected and interpretable given the nonlinear and policy-driven nature of
+LendingClub’s interest-rate assignment.
+
+For improved predictive performance, models capable of capturing nonlinearities—such
+as GAMs, regularised linear models (LASSO/Elastic Net), or tree-based ensemble
+methods—are more appropriate for this type of data.
 
 
-```{r cooks-distance, fig.height=5, fig.width=6}
-plot(lm_fit, which = 4)  # Cook's distance
+
+
+------------------------------------------------------------
+
+
+
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(caret)
+library(corrplot)
+library(car)
+library(Hmisc)
+
+# 1. Load Data
+input_file_path <- "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/cleaned_data.csv" # Use relative path if possible
+cleaned_data <- read.csv(input_file_path)
+
+# 2. Complete Cases (Strict requirement for OLS diagnostics)
+cleaned_data_cc <- na.omit(cleaned_data)
+
+# 3. SPLIT DATA FIRST (70/15/15)
+set.seed(123)
+# Create indices
+n <- nrow(cleaned_data_cc)
+train_idx <- sample(seq_len(n), size = floor(0.7 * n))
+remaining_idx <- setdiff(seq_len(n), train_idx)
+val_idx <- sample(remaining_idx, size = floor(0.15 * n))
+test_idx <- setdiff(remaining_idx, val_idx)
+
+# Assign subsets
+train_set <- cleaned_data_cc[train_idx, ]
+val_set   <- cleaned_data_cc[val_idx, ]
+test_set  <- cleaned_data_cc[test_idx, ]
+
+cat("Train size:", nrow(train_set), "\n")
+```
+### **2. Feature Engineering (The "Fuel" & "Engine" Fix)**
+
+This block applies the transformations we tested. We apply them to `train_set` for modeling, but you will need to apply the exact same logic to `val_set` and `test_set` when you predict later.
+
+
+```{r feature-engineering}
+# Function to apply transformations consistently
+transform_features <- function(df) {
+  df %>%
+    mutate(
+      # 1. TARGET: Log-transform interest rate to fix "diamond" residuals
+      log_int_rate = log(int_rate),
+      
+      # 2. INCOME: Log-transform to linearize the curve
+      log_annual_inc = log(annual_inc + 1),
+      
+      # 3. DTI: Add squared term for curvature (poly(dti, 2))
+      # We create it manually to keep it in the dataframe
+      dti_sq = dti^2,
+      
+      # 4. Ensure factors are factors
+      term = as.factor(term),
+      purpose = as.factor(purpose),
+      home_ownership = as.factor(home_ownership),
+      delinq_2yrs_cat = as.factor(delinq_2yrs_cat)
+    )
+}
+
+
+# Apply to Train (and Validation for later)
+train_transformed <- transform_features(train_set)
+val_transformed   <- transform_features(val_set)
 ```
 
 
-Points with much larger Cook’s distance than the rest deserve closer inspection.
 
-### 7.5.2 Residuals vs Leverage with Cook’s Contours
+--
+
+### **3. EDA on Training Data Only**
+
+Now you can run your scatterplots and correlations without fear of leakage.
 
 
-```{r residuals-vs-leverage, fig.height=5, fig.width=6}
-plot(lm_fit, which = 5)
+```{r train-eda}
+# Correlation on transformed numeric variables
+numeric_vars <- train_transformed %>% 
+  select(log_int_rate, log_annual_inc, dti, dti_sq, loan_amnt, 
+         revol_bal_log, tot_cur_bal_log)
+
+cor_mat <- cor(numeric_vars, use = "pairwise.complete.obs")
+corrplot(cor_mat, method = "color", type = "lower", diag = FALSE, title = "Correlations (Train)")
+
+# Check the new relationship: Log Income vs Log Int Rate
+# (This should look much straighter than your original curved plot)
+train_transformed %>%
+  sample_n(10000) %>%
+  ggplot(aes(x = log_annual_inc, y = log_int_rate)) +
+  geom_point(alpha = 0.1) +
+  geom_smooth(method = "lm", color = "red") +
+  ggtitle("Linearity Check: Log Income vs Log Int Rate")
+```
+---
+
+### **4. Fitting the Full Model**
+
+Here we combine the transformed variables with the categorical ones (`term`, `purpose`) to maximize predictive power.
+
+
+```{r fit-full-model}
+# Define the formula with our transformed variables
+# Note: We use log_int_rate as the target
+full_formula <- log_int_rate ~ 
+                log_annual_inc + 
+                dti + dti_sq + 
+                loan_amnt + 
+                term +                  
+                purpose + 
+                inq_last_6mths + 
+                delinq_2yrs_cat + 
+                revol_bal_log + 
+                tot_cur_bal_log + 
+                home_ownership
+
+# Fit model
+lm_final <- lm(full_formula, data = train_transformed)
+
+summary(lm_final)
+```
+---
+
+### **5. Diagnostics **
+
+This generates the plots to confirm the "diamond" shape is improved and normality is better.
+
+
+```{r model-diagnostics}
+par(mfrow = c(2, 2)) # 2x2 grid for plots
+
+# 1. Residuals vs Fitted (Check for Homoscedasticity)
+plot(lm_final, which = 1) 
+
+# 2. Normal Q-Q (Check for Normality)
+plot(lm_final, which = 2)
+
+# 3. Scale-Location
+plot(lm_final, which = 3)
+
+# 4. Residuals vs Leverage
+plot(lm_final, which = 5)
+
+# VIF Check
+vif(lm_final)
+```
+```{r}
+# ---------------------------------------------------------
+# CALCULATION OF MSE & RMSE ON ORIGINAL SCALE
+# ---------------------------------------------------------
+
+# 1. Choose your dataset (Train, Validation, or Test)
+# Make sure this dataset has the same transformations applied!
+target_df <- train_transformed  # or val_transformed / test_transformed
+
+# 2. Make predictions (These will be in Log units)
+log_predictions <- predict(lm_final, newdata = target_df)
+
+# 3. Convert predictions back to original Interest Rate %
+# We reverse the log() using exp()
+predictions_original <- exp(log_predictions)
+
+# 4. Get the actual original interest rates
+actuals <- target_df$int_rate
+
+# 5. Calculate Metrics
+mse_val <- mean((actuals - predictions_original)^2)
+rmse_val <- sqrt(mse_val)
+
+# 6. Print Results
+cat("------------------------------------------\n")
+cat("Results on Original Scale (Interest Rate %)\n")
+cat("------------------------------------------\n")
+cat("MSE: ", round(mse_val, 4), "\n")
+cat("RMSE:", round(rmse_val, 4), "\n")
+cat("------------------------------------------\n")
+cat("Interpretation:\n")
+cat("On average, the model's predictions are off by +/-", round(rmse_val, 2), "percentage points.\n")
 ```
 
 
-Points in the top right corner with high leverage and large residuals may be **highly influential**.  
-We would discuss whether these are:
 
-- data errors (to be corrected or removed),
-- genuine extreme but valid cases (to be kept, possibly with robust methods).
 
----
 
-# 8. Summary
-
-In this R Markdown, we:
-
-1. Started from `cleaned_data` and restricted to **complete cases** for diagnostic purposes.
-2. Followed the slides’ recommendations for **EDA**:
-   - histograms (Hmisc),
-   - scatterplots / boxplots / mosaic-like plots for relationships between variables,
-   - correlation structure using `corrplot`.
-3. Created a **train / validation / test split** (70/15/15, seed 123).
-4. Repeated **scatterplots and correlation analysis** on the **training set**.
-5. Fit a **multiple linear regression model** on the training data only.
-6. Performed all **mandatory linear regression checks**:
-   - linearity (residuals vs fitted, residuals vs predictors, partial residual plots),
-   - homoscedasticity (residuals vs fitted, optional Breusch-Pagan test),
-   - normality of residuals (Q–Q plot),
-   - multicollinearity (VIF),
-   - influential points (Cook’s distance, residuals vs leverage).
-
-This structure matches best practice and is consistent with the workflow taught in the course. You can now plug in your actual variable names (e.g., focusing on clinically or financially relevant predictors) and interpret the diagnostics in the context of your LendingClub project.

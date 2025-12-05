@@ -1508,6 +1508,15 @@ Then drop the original column
 cleaned_data <- cleaned_data %>%
   select(-c(revol_bal, tot_cur_bal, total_rev_hi_lim))
 ```
+```{r}
+# We'll save it as "cleaned_data.csv" inside the Intermediate directory.
+output_file_path <- "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/cleaned_data.csv"
+
+# Save the data frame to the specified path
+write.csv(cleaned_data, 
+          file = output_file_path, 
+          row.names = FALSE)
+```
 
 ### Feature Selection
 

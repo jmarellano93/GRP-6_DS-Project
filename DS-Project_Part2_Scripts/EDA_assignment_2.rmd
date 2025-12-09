@@ -240,9 +240,9 @@ print(outlier_fam_members)
 ```
 
 ```{r}
-# show rows where CNT_FAM_MEMBERS > 10
-outlier_fam_members <- data[data$CNT_FAM_MEMBERS > 10, ]
-print(outlier_fam_members)
+# show rows where CNT_CHILDREN > 10
+outlier_children <- data[data$CNT_CHILDREN > 6, ]
+print(outlier_children)
 ```
 We see heavy outliers in the family members column. A 38-year-old- with 12 children is statistically extremely improbable and likely a data error. Since it are only 2 rows we will drop them.
 ```{r}
@@ -363,201 +363,205 @@ for (feature in names(numeric_data)) {
 
 
 ## Clean dataset so only the necessary columns remain
-We will drop the changed or unnecessary columns to keep the dataset clean.
-```{r}
-cleaned_data <- data %>%
-  select(-ID, -DAYS_BIRTH, -DAYS_EMPLOYED, -AMT_INCOME_TOTAL, -ACTIVE_EMPLOYMENT_YEARS)
-# Display the structure of the cleaned dataset
-str(cleaned_data)
-```
-
 Show all levels of the categorical columns and correct if necessary.
 ```{r}
 str(data)
 ```
 
 ```{r}
-# Map status levels to integers 0-7
-# We treat 'C' (Paid) as 0, 'X' (No Loan) as 1, and delays as 2-7
-data$target_encoded <- recode(data$status,
-    "C" = 0,
-    "X" = 1,
-    "0" = 2,
-    "1" = 3,
-    "2" = 4,
-    "3" = 5,
-    "4" = 6,
-    "5" = 7
+library(dplyr)
+library(fastDummies)
+
+# TARGET ENCODING
+# Convert status to character to avoid factor issues
+data$status <- as.character(data$status)
+
+# Map status levels to class IDs 0..7 (unordered)
+data$target_class <- recode(data$status,
+    "C" = 0, "X" = 1,
+    "0" = 2, "1" = 3, "2" = 4,
+    "3" = 5, "4" = 6, "5" = 7
+) |> as.numeric()
+
+
+# BOOLEAN FLAGS → NUMERIC
+bool_cols <- c(
+  "FLAG_OWN_CAR", "FLAG_OWN_REALTY",
+  "FLAG_WORK_PHONE", "FLAG_PHONE", "FLAG_EMAIL"
 )
-# Ensure it is numeric for the NN
-data$target_encoded <- as.numeric(data$target_encoded)
 
-# Convert logical TRUE/FALSE to 1/0
-cols_boolean <- c("FLAG_OWN_CAR", "FLAG_OWN_REALTY", "FLAG_WORK_PHONE", "FLAG_PHONE", "FLAG_EMAIL")
-data[cols_boolean] <- lapply(data[cols_boolean], as.numeric)
+# Convert TRUE/FALSE or Y/N encoded booleans into numeric 0/1
+data[bool_cols] <- lapply(data[bool_cols], as.numeric)
 
-# We map this manually because 'Academic degree' > 'Secondary'
-# Check your specific levels with: levels(data$NAME_EDUCATION_TYPE)
+
+# EDUCATION (ORDINAL)
+# The ONLY truly ordinal categorical variable.
+
 data$EDUCATION_ENCODED <- case_when(
     data$NAME_EDUCATION_TYPE == "Lower secondary" ~ 0,
     data$NAME_EDUCATION_TYPE == "Secondary / secondary special" ~ 1,
     data$NAME_EDUCATION_TYPE == "Incomplete higher" ~ 2,
     data$NAME_EDUCATION_TYPE == "Higher education" ~ 3,
     data$NAME_EDUCATION_TYPE == "Academic degree" ~ 4,
-    TRUE ~ 1 # Default fallback
+    TRUE ~ NA_real_
 )
+
+# Drop original education variable
+data <- data %>% select(-NAME_EDUCATION_TYPE)
+
+# ONE-HOT ENCODING (NOMINAL)
+# No ranking between categories → must be one-hot encoded.
+
+nominal_cols <- c(
+  "CODE_GENDER",
+  "NAME_INCOME_TYPE",
+  "NAME_FAMILY_STATUS",
+  "NAME_HOUSING_TYPE",
+  "OCCUPATION_TYPE"
+)
+
+# Ensure factors
+data[nominal_cols] <- lapply(data[nominal_cols], as.factor)
+
+# One-hot encode
+data <- dummy_cols(
+  data,
+  select_columns = nominal_cols,
+  remove_selected_columns = TRUE,
+  remove_first_dummy = FALSE   # keep full set
+)
+
+
+# 5. DROP UNUSED OR IGNORED COLUMNS (OPTIONAL)
+# ID is not a feature.
+data <- data %>% select(-ID, -DAYS_BIRTH, -DAYS_EMPLOYED, -AMT_INCOME_TOTAL, -ACTIVE_EMPLOYMENT_YEARS, -status)
 
 str(data)
 ```
-The following columns should be changed with one-hot-encoding, since there is no ranking:
-- CODE_GENDER
-- NAME_INCOME_TYPE
-- NAME_FAMILY_STATUS
-- NAME_HOUSING_TYPE
-- OCCUPATION_TYPE
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-The distribution is very strange, with a large peak at 365'243 days. When looking at the first few lines of the dataset, we can see that this value is used to indicate that a person is pensioned. To verify this assumption we will check the days_unemployed of all pensioned people. Expectedly, all pensioned people should have this value. Furthermore, only pensioned people should have this value.
-```{r}
-# We check all distinct levels of NAME_INCOME_TYPE to ensure we can identify all pensioned people
-distinct_income_types <- unique(data$NAME_INCOME_TYPE)
-cat("Distinct income types:", distinct_income_types, "\n") # Income type 1 = 'Pensioner'
-
-# Show distinct income type of people with DAYS_EMPLOYED == 365243
-unique(data$NAME_INCOME_TYPE[data$DAYS_EMPLOYED == 365243])
-cat("Number of people with DAYS_EMPLOYED == 365243:", 
-    nrow(data[data$DAYS_EMPLOYED == 365243, ]), "\n")
-cat("Number of pensioned people:", 
-    nrow(data[data$NAME_INCOME_TYPE == "Pensioner", ]), "\n")
-
-# Show occupation_type of people with DAYS_EMPLOYED == 365243
-unique(data$OCCUPATION_TYPE[data$DAYS_EMPLOYED == 365243])
-
-# Show occupation_type of people wih name_income_type == 'Pensioner'
-unique(data$OCCUPATION_TYPE[data$NAME_INCOME_TYPE == "Pensioner"])
-```
-As expected we can see that the majority (98%) of the people with DAYS_EMPLOYED == 365243 are pensioned. Treating these rows as a missing value would be wrong, therefore we flag these rows for now and investigate the missing rows and the 127 rows where the rule does not hold in more detail.
-```{r}
-# We check all distinct levels of NAME_INCOME_TYPE to ensure we can identify all pensioned people
-distinct_income_types <- unique(data$NAME_INCOME_TYPE)
-cat("Distinct income types:", distinct_income_types, "\n")
-
-# Show distinct income type of people with DAYS_EMPLOYED == 365243
-unique(data$NAME_INCOME_TYPE[data$DAYS_EMPLOYED == 365243])
-cat("Number of people with DAYS_EMPLOYED == 365243:", 
-    nrow(data[data$DAYS_EMPLOYED == 365243, ]), "\n")
-cat("Number of pensioned people:", 
-    nrow(data[data$NAME_INCOME_TYPE == "Pensioner", ]), "\n")
-```
-We can check the age distribution of pensioned people to see if there are any strange values.
-```{r}
-# Histogram of AGE for pensioned people
-hist(data$AGE[data$flag_pension == TRUE], 
-     main="Histogram of AGE for Pensioned People", 
-     xlab="AGE (years)", 
-     col="lightcoral")
-
-# Using the summary we can see the distribution of the data
-summary(data$AGE[data$flag_pension == TRUE])
-```
-The distribution of the age of the pensioned people, shows us that there are some rows where either the age or the employment days are wrong. We have to understand the occupation type of the pensioners to know whether or not we can identify the wrong rows.
-```{r}
-# Check unique occupation types
-unique(data$OCCUPATION_TYPE)
-
-# Check rows where flag_pension is TRUE
-unique(data$OCCUPATION_TYPE[data$flag_pension == TRUE])
-```
-With this information we know that if someone is pensioned, the occupation type should always be NA.
-
-We can look at the annual income of all the pensioners to see if there are any strange values. In specific for those with age below 55.
-```{r}
-# Scatter plot of AMT_INCOME_TOTAL vs AGE for pensioned people
-library(ggplot2)
-ggplot(data[data$flag_pension == TRUE, ], aes(x = AGE, y = AMT_INCOME_TOTAL)) +
-  geom_point(color = "purple", alpha = 0.5) +
-  labs(title = "Income vs Age for Pension-Classified Individuals",
-       x = "Age (years)",
-       y = "Income") +
-  theme_minimal()
-```
-```{r}
-# Amount with pension flag and age < 55
-pension_young <- data[data$flag_pension == TRUE & data$AGE < 55, ]
-cat("Number of pensioned people under 55:", nrow(pension_young), "\n")
-```
-In total 1'511 people with the sentinel 365'243 and income type 'Pensioner' are younger than 55. The income vs. age scatter plot indicate this "young pensioner" cluster follows an organic distribution, suggesting valid data (likely disability pensions or survivor benefits) rather than data corrpution. This is a distinct demographic with a unqiue risk profile since it has significantly different financial stability and repayment behavior compared to a standard retiree or a working professional. Dropping them would remove a critical 'edge case' from the neural netwrok's training data. 
-Therefore we create new categories that combine age and employment status and impute the NA in OCCUPATION_TYPE.
 
 ```{r}
-# Create new occupation_type categories, imputing the NA values
-# Where flag_pension is TRUE and age < 55, set to "Young Pensioner"
-# Where flag_pension is TRUE and age >= 55, set to "Retired"
-data$OCCUPATION_TYPE <- ifelse(data$flag_pension == TRUE & data$AGE < 55, 
-                               "Young Pensioner",
-                               ifelse(data$flag_pension == TRUE & data$AGE >= 55, 
-                                      "Retired",
-                                      data$OCCUPATION_TYPE)
+# Make histogram of each column except Target variable
+numeric_features <- sapply(data, is.numeric)
+numeric_data <- data[, numeric_features]
+for (feature in names(numeric_data)) {
+  p <- ggplot(data, aes(x = .data[[feature]])) +
+    geom_histogram(binwidth = 1, fill = "lightblue", color = "black", alpha = 0.7) +
+    labs(
+      title = paste("Histogram of", feature),
+      x = feature,
+      y = "Frequency"
+    ) +
+    theme_minimal()
+  
+  # print to view in Rstudio
+  print(p)
+}
+
+# Show NA values in pct of each column
+na_counts <- sapply(data, function(x) sum(is.na(x)))
+na_pct <- na_counts / nrow(data) * 100
+na_pct_df <- data.frame(Column = names(na_pct), NA_Percentage = na_pct
 )
-# Check the imputed OCCUPATION_TYPE values
-unique(data$OCCUPATION_TYPE)
+print(na_pct_df)
+
+# Split in train val split (70-15-15) and plot each feature vs the target
+# Set seed for reproducibility
+set.seed(42)
+
+# 1. Create Random Indices
+n_rows <- nrow(data)
+indices <- sample(1:n_rows)
+
+# 2. Calculate Split Sizes
+train_size <- floor(0.70 * n_rows)
+val_size   <- floor(0.15 * n_rows)
+test_size  <- n_rows - train_size - val_size # Remaining 15%
+
+# 3. Subset the Data
+train_idx <- indices[1:train_size]
+val_idx   <- indices[(train_size + 1):(train_size + val_size)]
+test_idx  <- indices[(train_size + val_size + 1):n_rows]
+
+train_data <- data[train_idx, ]
+val_data   <- data[val_idx, ]
+test_data  <- data[test_idx, ]
+
+# 4. Verify Dimensions
+cat("Training Set:   ", nrow(train_data), "rows (", round(nrow(train_data)/n_rows*100, 1), "%)\n")
+cat("Validation Set: ", nrow(val_data),   "rows (", round(nrow(val_data)/n_rows*100, 1), "%)\n")
+cat("Test Set:       ", nrow(test_data),  "rows (", round(nrow(test_data)/n_rows*100, 1), "%)\n")
+
 ```
 ```{r}
-table(data$OCCUPATION_TYPE)
-```
+library(ggplot2)
+library(reshape2)
 
-We can check whether the age and the years employed make sense. 
-```{r}
-# calculate age - years employed (disregarding the columsn with pension True) and visualise in a scatterplot
-data$YEARS_EMPLOYED <- abs(data$DAYS_EMPLOYED) / 365
+# --- A. PLOT CONTINUOUS VARIABLES VS TARGET ---
+# We treat 'target_class' as a factor to group the boxplots
+continuous_cols <- c("AGE", 
+                     "AMT_INCOME_TOTAL_LOG", 
+                     "ACTIVE_EMPLOYMENT_YEARS_LOG", 
+                     "CNT_CHILDREN", 
+                     "CNT_FAM_MEMBERS")
 
-# make new df for this check, drop rows where pension is True
-check_data <- data[data$flag_pension == FALSE, ]
+# Check which exist in your dataframe (in case some were dropped)
+cols_to_plot <- intersect(continuous_cols, colnames(train_data))
 
-# Calculate staring_work_age 
-check_data$STARTING_WORK_AGE <- check_data$AGE - check_data$YEARS_EMPLOYED
-# Scatter plot of STARTING_WORK_AGE vs ID
-ggplot(check_data, aes(x = ID, y = STARTING_WORK_AGE)) +
-  geom_point(color = "orange", alpha = 0.5) +
-  labs(title = "Starting Work Age vs ID",
-       x = "ID",
-       y = "Starting Work Age (years)") +
+for (col in cols_to_plot) {
+  p <- ggplot(train_data, aes(x = as.factor(target_class), y = .data[[col]], fill = as.factor(target_class))) +
+    geom_boxplot(outlier.alpha = 0.3) +
+    labs(
+      title = paste("Distribution of", col, "by Status Class"),
+      subtitle = "0 = Paid Off (Good) ... 7 = Write-Off (Bad)",
+      x = "Target Class (Status)",
+      y = col,
+      fill = "Status"
+    ) +
+    theme_minimal() +
+    theme(legend.position = "none")
+  
+  print(p)
+}
+
+
+# --- B. CORRELATION HEATMAP (FOR BINARY/ENCODED FEATURES) ---
+# It's better to see a heatmap of correlation than 50 bar charts.
+# We calculate correlation of everything vs target_class
+
+# 1. Calculate correlations
+cor_matrix <- cor(train_data, use = "pairwise.complete.obs")
+
+# 2. Extract correlation just for the target
+target_cor <- as.data.frame(cor_matrix[, "target_class"])
+colnames(target_cor) <- "Correlation_with_Target"
+target_cor$Feature <- rownames(target_cor)
+
+# 3. Filter for top strongest correlations (positive or negative) to reduce noise
+# Adjust threshold (e.g., 0.05) to see more or fewer features
+top_cor <- target_cor %>%
+  filter(abs(Correlation_with_Target) > 0.02) %>% 
+  filter(Feature != "target_class") %>%
+  arrange(desc(Correlation_with_Target))
+
+# 4. Plot
+ggplot(top_cor, aes(x = reorder(Feature, Correlation_with_Target), y = Correlation_with_Target, fill = Correlation_with_Target)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + # Flip to make labels readable
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  labs(
+    title = "Top Feature Correlations with Target (Status)",
+    x = "Feature",
+    y = "Pearson Correlation"
+  ) +
   theme_minimal()
-
-summary(check_data$STARTING_WORK_AGE)
 ```
 
+## Save the dataframe
+```{r}
+write.csv(
+  data,
+  file = "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/Assignment_2_cleaned.csv",
+  row.names = FALSE
+)
+```
 
-
-
-
-
-
-
-Make a function so that transformations will be done with a new dataset

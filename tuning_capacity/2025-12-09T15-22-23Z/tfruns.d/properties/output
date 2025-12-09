@@ -1,0 +1,6 @@
+Starting 5 -Fold Cross-Validation (Strict Scaling)...
+
+--- Processing Fold # 1 ---
+Fold 1 | Train Acc: 0.9773 vs Val Acc: 0.8403 | Gap: 0.1370
+
+--- Processing Fold # 2 ---

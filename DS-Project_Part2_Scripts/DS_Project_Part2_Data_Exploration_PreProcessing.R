@@ -197,7 +197,11 @@ process_credit_data <- function(df) {
     df_clean$AGE <- abs(df_clean$DAYS_BIRTH) / 365.25
     df_clean$DAYS_BIRTH <- NULL
   }
+ 
+  # print(nrow(df_clean$CNT_FAM_MEMBERS < df_clean$CNT_CHILDREN))
+  # check how many rows that we are changing before altering this feature.
   
+   
   # 5. Fix inconsistent family sizes --------------------------------------
   cat("Fixing inconsistent family size (CNT_FAM_MEMBERS < CNT_CHILDREN)...\n")
   
@@ -217,6 +221,7 @@ process_credit_data <- function(df) {
     df_clean$AMT_INCOME_TOTAL <- NULL
   }
   
+  #Check number of missing rows before imputation
   # 7. Impute missing values ----------------------------------------------
   cat("Imputing missing values (Median for numeric, 'Unknown' for categoricals)...\n")
   
@@ -290,7 +295,7 @@ perform_eda <- function(df_clean) {
   cat("\n[Phase 1] Structure & Content Inspection\n")
   
   # 1. View() is interactive; usually commented out in automated scripts
-  # View(df_clean) 
+  View(df_clean) 
   
   # 2. Head/Tail Check
   cat("First 5 rows:\n")
@@ -375,10 +380,11 @@ perform_eda <- function(df_clean) {
       theme_minimal()
     print(p_cat)
   }
+
+  # --- Phase 4: Other Visualizations ---
+  cat("\n[Phase 3] Other Visualization\n")
   
-  cat("\n--- Module 2 Complete ---\n")
-  
-  # Visualize New Features
+  # 1. Visualize New Features
   if("AGE" %in% names(df_clean)) {
     p_age <- ggplot(df_clean, aes(x=AGE)) + 
       geom_histogram(fill="purple", bins=30) + 
@@ -386,7 +392,7 @@ perform_eda <- function(df_clean) {
     print(p_age)
   }
   
-  # Correlation Analysis
+  # 2. Correlation Analysis
   cat("Generating Correlation Matrix...\n")
   num_df <- select_if(df_clean, is.numeric)
   if(ncol(num_df) > 1) {
@@ -394,7 +400,7 @@ perform_eda <- function(df_clean) {
     corrplot(cor_mat, method="circle", type="lower", title="Correlation Matrix (Cleaned)", mar=c(0,0,2,0))
   }
   
-  # Target Separation by Category
+  # 3. Target Separation by Category
   cat_vars <- names(select_if(df_clean, is.character))
   for(var in cat_vars) {
     p_bivar <- ggplot(df_clean, aes_string(x=var, fill="factor(TARGET)")) +
@@ -412,6 +418,8 @@ perform_eda <- function(df_clean) {
 # ==============================================================================
 # Module 5: Neural Network Data Preparation
 # ==============================================================================
+
+# Add a validation set
 
 fit_nn_preprocessing <- function(df_clean, target_var = "TARGET") {
   cat("\n================================================================\n")

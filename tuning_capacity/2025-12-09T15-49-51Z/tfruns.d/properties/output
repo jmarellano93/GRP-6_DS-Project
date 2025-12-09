@@ -1,0 +1,25 @@
+Starting 5 -Fold Cross-Validation (Variable Depth)...
+
+--- Processing Fold # 1 ---
+Fold 1 | Max Val Acc: 0.8481 (at Epoch 19)
+
+--- Processing Fold # 2 ---
+Fold 2 | Max Val Acc: 0.8430 (at Epoch 18)
+
+--- Processing Fold # 3 ---
+Fold 3 | Max Val Acc: 0.8386 (at Epoch 17)
+
+--- Processing Fold # 4 ---
+Fold 4 | Max Val Acc: 0.8464 (at Epoch 18)
+
+--- Processing Fold # 5 ---
+Fold 5 | Max Val Acc: 0.8406 (at Epoch 16)
+
+========================================
+      ARCHITECTURE PERFORMANCE          
+========================================
+Avg Train Accuracy:  0.9275 
+Avg Val Accuracy:    0.8433 
+Overfitting Gap:     0.0841 
+----------------------------------------
+WARNING: High Overfitting. Increase Dropout.

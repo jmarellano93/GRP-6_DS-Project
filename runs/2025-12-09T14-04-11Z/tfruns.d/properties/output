@@ -1,0 +1,116 @@
+
+> # Assignment 2 MLP (Multi-Layer Perceptron)
+> 
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns) # Needed for flags()
+
+> # Hyperparameter flags ---------------------------------------------------
+> FLAGS <- flags(
++   flag_numeric("dropout1", 0),
++   flag_numeric("drop ..." ... [TRUNCATED] 
+
+> # 1. Load Pre-Processed Data ---------------------------------------------
+> # Replace with the actual name of your exported CSV from the EDA step
+> .... [TRUNCATED] 
+
+> # Separate Features (X) and Target (Y)
+> target_col <- "target_class" 
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 8)
+
+> # 2. Split (No Scaling Yet!) ---------------------------------------------
+> set.seed(42)
+
+> # Create Holdout Test Set (15%)
+> n_rows <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> # Keep these RAW for now
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ] 
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # 3. Cross-Validation Loop (5 Folds) -------------------------------------
+> k <- 5
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> # --- FIX: Initialize the results dataframe container ---
+> results <- data.frame(
++   Fold = integer(),
++   Train_Loss = numeric(),
++   Val_Loss =  .... [TRUNCATED] 
+
+> # -----------------------------------------------------
+> 
+> cat("Starting", k, "-Fold Cross-Validation (Strict Scaling)...\n")
+Starting 5 -Fold Cross-Validation (Strict Scaling)...
+
+> for(i in 1:k){
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++   # a. Split Raw Data
++   val_indices <- which(folds == i, arr.ind = TRUE)
++    .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---
+Fold 1 | Train Acc: 0.9083 vs Val Acc: 0.8210 | Gap: 0.0873
+
+--- Processing Fold # 2 ---
+Fold 2 | Train Acc: 0.9121 vs Val Acc: 0.8260 | Gap: 0.0861
+
+--- Processing Fold # 3 ---
+Fold 3 | Train Acc: 0.9122 vs Val Acc: 0.8164 | Gap: 0.0958
+
+--- Processing Fold # 4 ---
+Fold 4 | Train Acc: 0.9105 vs Val Acc: 0.8224 | Gap: 0.0881
+
+--- Processing Fold # 5 ---
+Fold 5 | Train Acc: 0.9151 vs Val Acc: 0.8235 | Gap: 0.0917
+
+> # 4. Final Architecture Report -------------------------------------------
+> cat("\n========================================\n")
+
+========================================
+
+> cat("      ARCHITECTURE PERFORMANCE          \n")
+      ARCHITECTURE PERFORMANCE          
+
+> cat("========================================\n")
+========================================
+
+> avg_train_acc <- mean(results$Train_Acc)
+
+> avg_val_acc   <- mean(results$Val_Acc)
+
+> gap <- avg_train_acc - avg_val_acc
+
+> cat("Avg Train Accuracy: ", round(avg_train_acc, 4), "\n")
+Avg Train Accuracy:  0.9116 
+
+> cat("Avg Val Accuracy:   ", round(avg_val_acc, 4), "\n")
+Avg Val Accuracy:    0.8218 
+
+> cat("----------------------------------------\n")
+----------------------------------------
+
+> cat("Overfitting Gap:    ", round(gap, 4), "\n")
+Overfitting Gap:     0.0898 
+
+> if(gap > 0.05) {
++   cat("WARNING: High Overfitting. Consider increasing Dropout or reducing Units.\n")
++ } else if(avg_train_acc < 0.70) {
++   cat( .... [TRUNCATED] 
+WARNING: High Overfitting. Consider increasing Dropout or reducing Units.

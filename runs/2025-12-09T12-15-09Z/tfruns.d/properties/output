@@ -1,0 +1,17 @@
+
+> # Assignment 2 MLP (Multi-Layer Perceptron)
+> 
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> # Hyperparameter flags ---------------------------------------------------
+> FLAGS <- flags(
++   flag_numeric("dropout1", 0.4),
++   flag_numeric("dr ..." ... [TRUNCATED] 
+
+> # 1. Load Pre-Processed Data ---------------------------------------------
+> # Replace with the actual name of your exported CSV from the EDA step
+> .... [TRUNCATED] 

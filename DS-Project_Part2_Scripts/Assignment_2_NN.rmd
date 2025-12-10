@@ -1,0 +1,124 @@
+---
+title: "Neural_Network"
+output: html_document
+date: "2025-12-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Set personal working directory
+setwd("~/Documents/Repos/GRP-6_DS-Project")
+renv::activate()
+```
+## Type of Network
+The dataset is tabular data with numerical features and a categorical target variable. A feedforward neural network is the most suitable type of network for this classification task.
+
+A convolutional neural network (CNN) is typically used for image data, while a recurrent neural network (RNN) is more suited for sequential data such as time series or text. Since our data does not have spatial or sequential characteristics, a feedforward neural network is the best choice.
+
+```{r libraries}
+library(tfruns)
+library(keras3)
+```
+
+## Execute one experiment
+For easier handling the experiment is outsourced to a separate R file "Assignment_2_MLP.R"
+```{r run the experiment}
+training_run("Assignment_2_MLP.r")
+```
+
+
+# --- Architecture Search ---
+# Goal: Find the balance between Model Size (Units) and Overfitting (Dropout)
+
+runs_grid <- list(
+  # 1. Model Capacity: Try a "Lean" model vs. a "Wide" model
+  units1 = c(128, 256),
+  units2 = c(64, 128),
+  
+  # 2. Regularization: Try Low vs. High Dropout
+  # If the model learns poorly, Low dropout helps.
+  # If the model overfits, High dropout helps.
+  dropout1 = c(0.2, 0.5), 
+  dropout2 = c(0.2, 0.5),
+  
+  # 3. Constants: Keep these fixed for now to reduce noise
+  learning_rate = c(0.001),
+  batch_size = c(128)
+)
+
+# Execute the Tuning Run
+# This creates 2 * 2 * 2 * 2 = 16 combinations
+# Note: Since our script does 5-Fold CV, this equals 80 total training sessions.
+tuning_run("credit_mlp.R", 
+           runs_dir = "tuning_architecture", 
+           flags = runs_grid,
+           echo = FALSE) # echo=FALSE speeds up the console output
+
+# --- View Results ---
+# List top 5 models sorted by Validation Accuracy
+results <- ls_runs(runs_dir = "tuning_architecture", 
+                   order = metric_val_accuracy, 
+                   decreasing = TRUE)
+
+# Display the winning hyperparameters
+head(results[, c("flag_units1", "flag_units2", "flag_dropout1", "flag_dropout2", "metric_val_accuracy", "metric_val_loss")], 5)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Preprocessing
+Before training the neural network, we need to preprocess the data. Cleaning the data has been done in the previous steps. For a network to work efficiently, we need to scale the numerical features and encode the categorical target variable.
+
+## Splitting the data 
+```{r}  
+library(dplyr)
+
+set.seed(42) # Answer to everything
+
+# -------------------------------
+# Define target and feature matrix
+# -------------------------------
+target_col <- "status"   # your target column name
+data <- cleaned_data
+
+# Shuffle rows
+data <- data[sample(nrow(data)), ]
+
+n <- nrow(data)
+n_train <- floor(0.70 * n)
+n_val   <- floor(0.15 * n)
+
+train_data <- data[1:n_train, ]
+val_data   <- data[(n_train + 1):(n_train + n_val), ]
+test_data  <- data[(n_train + n_val + 1):n, ]
+```
+
+## Prepare the Data for the network
+The neural network with keras expects the input features to be in a matrix format and the target variable to be one-hot encoded for multi-class classification.
+```{r}
+# Features = all non-target columns
+feature_cols <- setdiff(names(data), target_col)
+
+x_train <- as.matrix(train_data[, feature_cols])
+y_train <- train_data[[target_col]]
+
+x_val   <- as.matrix(val_data[, feature_cols])
+y_val   <- val_data[[target_col]]
+
+x_test  <- as.matrix(test_data[, feature_cols])
+y_test  <- test_data[[target_col]]
+```
+

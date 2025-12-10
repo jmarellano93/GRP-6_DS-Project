@@ -1,0 +1,25 @@
+Starting 5 -Fold Cross-Validation (Strict Scaling)...
+
+--- Processing Fold # 1 ---
+Fold 1 | Train Acc: 0.9618 vs Val Acc: 0.8380 | Gap: 0.1237
+
+--- Processing Fold # 2 ---
+Fold 2 | Train Acc: 0.9587 vs Val Acc: 0.8406 | Gap: 0.1182
+
+--- Processing Fold # 3 ---
+Fold 3 | Train Acc: 0.9587 vs Val Acc: 0.8290 | Gap: 0.1297
+
+--- Processing Fold # 4 ---
+Fold 4 | Train Acc: 0.9604 vs Val Acc: 0.8412 | Gap: 0.1192
+
+--- Processing Fold # 5 ---
+Fold 5 | Train Acc: 0.9609 vs Val Acc: 0.8396 | Gap: 0.1213
+
+========================================
+      ARCHITECTURE PERFORMANCE          
+========================================
+Avg Train Accuracy:  0.9601 
+Avg Val Accuracy:    0.8377 
+----------------------------------------
+Overfitting Gap:     0.1224 
+WARNING: High Overfitting. Consider increasing Dropout or reducing Units.

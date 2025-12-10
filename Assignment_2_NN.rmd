@@ -1,0 +1,155 @@
+---
+title: "Neural_Network"
+output: html_document
+date: "2025-12-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Set personal working directory
+setwd("~/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts")
+renv::activate()
+```
+## Type of Network
+The dataset is tabular data with numerical features and a categorical target variable. A feedforward neural network is the most suitable type of network for this classification task.
+
+A convolutional neural network (CNN) is typically used for image data, while a recurrent neural network (RNN) is more suited for sequential data such as time series or text. Since our data does not have spatial or sequential characteristics, a feedforward neural network is the best choice.
+
+```{r libraries}
+library(tfruns)
+library(keras3)
+library(tictoc)
+library(beepr)
+```
+
+## Execute one experiment
+For easier handling the experiment is outsourced to a separate R file "Assignment_2_MLP.R". We start without dropout and a simple NN architecture. The initial goal is to get the training accuracy as good as possible before tuning other parameters.
+```{r run the experiment}
+tic()
+
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP.r")
+beep(sound = 5)
+toc()
+```
+
+# --- Architecture Search ---
+# Goal: Find the balance between Model Size (Units) and Overfitting (Dropout)
+First we want to know how good we can get the training accuracy as high as possible. We want to make sure we have enough material to capture every detail of the subject. We do this by increasing the units and layers of the network. We do not include dropout at the moment and keep learning rate and batch size constant. We start by increasing the width (more units) of the network, since this often works better than increasing the depth (more layers). For now, we ignore the validation accuracy and the overfitting of the model.
+```{r}
+runs_grid <- list(
+  # 1. Model Capacity: Test Width (Medium vs Wide)
+  units1 = c(256, 512),
+  units2 = c(128, 256),
+  
+  # 2. Model Depth: Test 2 Layers (0) vs 3 Layers (128)
+  # This checks if "Deeper" is better than "Wider"
+  units3 = c(0, 64, 128),
+  
+  # 3. Regularization: DISABLED for Phase 1
+  # We want to see the max potential (overfitting) first.
+  dropout1 = c(0), 
+  dropout2 = c(0),
+  dropout3 = c(0),
+  
+  # 4. Constants
+  learning_rate = c(0.001),
+  batch_size = c(128)
+)
+```
+
+
+# Execute the Tuning Run
+```{r}
+tic()
+
+tuning_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP.r", 
+           runs_dir = "tuning_capacity", 
+           flags = runs_grid,
+           echo = FALSE) 
+
+beep(sound = 5)
+toc()
+```
+
+# --- View Results ---
+# List top 5 models sorted by Validation Accuracy
+```{r}
+results <- ls_runs(runs_dir = "tuning_architecture", 
+                   order = metric_val_accuracy, 
+                   decreasing = TRUE)
+```
+
+# Display the winning hyperparameters
+```{r}
+head(results[, c(
+  "flag_units1",
+  "flag_units2",
+  "flag_units3",       
+  "flag_dropout1",
+  "flag_dropout2",
+  "flag_dropout3",     
+  "flag_learning_rate",
+  "flag_batch_size",
+  "metric_val_accuracy",
+  "metric_val_loss"
+)], 10)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Preprocessing
+Before training the neural network, we need to preprocess the data. Cleaning the data has been done in the previous steps. For a network to work efficiently, we need to scale the numerical features and encode the categorical target variable.
+
+## Splitting the data 
+```{r}  
+library(dplyr)
+
+set.seed(42) # Answer to everything
+
+# -------------------------------
+# Define target and feature matrix
+# -------------------------------
+target_col <- "status"   # your target column name
+data <- cleaned_data
+
+# Shuffle rows
+data <- data[sample(nrow(data)), ]
+
+n <- nrow(data)
+n_train <- floor(0.70 * n)
+n_val   <- floor(0.15 * n)
+
+train_data <- data[1:n_train, ]
+val_data   <- data[(n_train + 1):(n_train + n_val), ]
+test_data  <- data[(n_train + n_val + 1):n, ]
+```
+
+## Prepare the Data for the network
+The neural network with keras expects the input features to be in a matrix format and the target variable to be one-hot encoded for multi-class classification.
+```{r}
+# Features = all non-target columns
+feature_cols <- setdiff(names(data), target_col)
+
+x_train <- as.matrix(train_data[, feature_cols])
+y_train <- train_data[[target_col]]
+
+x_val   <- as.matrix(val_data[, feature_cols])
+y_val   <- val_data[[target_col]]
+
+x_test  <- as.matrix(test_data[, feature_cols])
+y_test  <- test_data[[target_col]]
+```
+

@@ -1,0 +1,68 @@
+
+> # Assignment 2 MLP (Multi-Layer Perceptron)
+> 
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns) # Needed for flags()
+
+> # Hyperparameter flags ---------------------------------------------------
+> FLAGS <- flags(
++   flag_numeric("dropout1", 0),
++   flag_numeric("drop ..." ... [TRUNCATED] 
+
+> # 1. Load Pre-Processed Data ---------------------------------------------
+> # Replace with the actual name of your exported CSV from the EDA step
+> .... [TRUNCATED] 
+
+> # Separate Features (X) and Target (Y)
+> target_col <- "target_class" 
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 8)
+
+> # 2. Split (No Scaling Yet!) ---------------------------------------------
+> set.seed(42)
+
+> # Create Holdout Test Set (15%)
+> n_rows <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> # Keep these RAW for now
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ] 
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # 3. Cross-Validation Loop (5 Folds) -------------------------------------
+> k <- 5
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> # --- FIX: Initialize the results dataframe container ---
+> results <- data.frame(
++   Fold = integer(),
++   Train_Loss = numeric(),
++   Val_Loss =  .... [TRUNCATED] 
+
+> # -----------------------------------------------------
+> 
+> cat("Starting", k, "-Fold Cross-Validation (Strict Scaling)...\n")
+Starting 5 -Fold Cross-Validation (Strict Scaling)...
+
+> for(i in 1:k){
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++   # a. Split Raw Data
++   val_indices <- which(folds == i, arr.ind = TRUE)
++    .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---

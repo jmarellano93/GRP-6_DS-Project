@@ -1,0 +1,93 @@
+
+> # ==============================================================================
+> # 0. Environment & Library Setup
+> # ============================ .... [TRUNCATED] 
+
+> # 2. Load the correct legacy package
+> if (!require(keras)) install.packages("keras")
+# Downloading packages -------------------------------------------------------
+- Downloading keras from CRAN ...               OK [3.1 Mb in 2.3s]
+Successfully downloaded 1 package in 5.1 seconds.
+
+The following package(s) will be installed:
+- keras [2.16.0]
+These packages will be installed into "~/Documents/Repos/GRP-6_DS-Project/renv/library/macos/R-4.5/aarch64-apple-darwin20".
+
+
+# Installing packages --------------------------------------------------------
+- Installing keras ...                          OK [installed binary and cached]
+Successfully installed 1 package in 0.11 seconds.
+
+> library(reticulate)
+
+> library(tensorflow)
+
+> library(keras) # <--- The Keras 2 Interface
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> # 3. Force the M3 environment
+> use_python("/Users/Jujou/miniforge3/envs/tf_m3_env/bin/python", required = TRUE)
+
+> # 4. Helper for "Default value if null"
+> `%||%` <- function(x, y) if (is.null(x)) y else x
+
+> # ==============================================================================
+> # 1. Hyperparameter flags
+> # =================================== .... [TRUNCATED] 
+
+> # ==============================================================================
+> # 2. Load & Prepare Data
+> # ==================================== .... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> # FIX: Integer conversion + Zero-based indexing for Python (0..7)
+> raw_labels <- as.integer(data[[target_col]]) - 1
+
+> y_all <- tf$keras$utils$to_categorical(raw_labels, num_classes = 8L)
+
+> # ==============================================================================
+> # 3. Split Data
+> # ============================================= .... [TRUNCATED] 
+
+> n_rows  <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ]
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # ==============================================================================
+> # 4. Cross-Validation
+> # ======================================= .... [TRUNCATED] 
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> results <- data.frame(
++   Fold = integer(k),
++   Train_Loss = numeric(k), Val_Loss = numeric(k),
++   Train_Acc = numeric(k), Val_Acc = numeric(k)
++ .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold Cross-Validation on M3 GPU...\n")
+Starting 5 -Fold Cross-Validation on M3 GPU...
+
+> for (i in seq_len(k)) {
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++   # a. Split
++   val_indices      <- which(folds == i, arr.ind = TRUE) .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---

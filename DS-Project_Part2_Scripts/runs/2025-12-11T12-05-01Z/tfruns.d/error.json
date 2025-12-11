@@ -1,0 +1,4 @@
+{
+  "message": "TypeError: 'float' object cannot be interpreted as an integer\n\u001b[90mRun \u001b]8;;rstudio:run:reticulate::py_last_error()\u0007`reticulate::py_last_error()`\u001b]8;;\u0007 for details.\u001b[39m",
+  "traceback": ["py_call_impl(callable, call_args$unnamed, call_args$named)", "tf$keras$utils$to_categorical(data[[target_col]], num_classes = 8)", "eval(ei, envir)", "eval(ei, envir)", "training_run(\"/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP.r\")"]
+}

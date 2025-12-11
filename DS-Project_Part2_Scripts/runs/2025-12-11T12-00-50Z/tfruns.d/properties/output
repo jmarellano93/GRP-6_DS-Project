@@ -1,0 +1,31 @@
+
+> # Assignment 2 MLP (Multi-Layer Perceptron)
+> # Supports Variable Depth (2 or 3 Layers) and Robust Scaling
+> 
+> library(keras3)
+
+> library(tensorflow)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Regularization
++   flag_numeric("dropout1", 0),
++ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> data <- read.csv(
++   "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>%
++   select(-all_of(target_col)) %>%
++   as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 8)

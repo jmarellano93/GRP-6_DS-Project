@@ -1,0 +1,12 @@
+
+> # ==============================================================================
+> # 0. Environment & Library Setup
+> # ============================ .... [TRUNCATED] 
+
+> # 2. Load the correct legacy package
+> if (!require(keras)) install.packages("keras")
+The following package(s) will be installed:
+- keras [2.16.0]
+These packages will be installed into "~/Documents/Repos/GRP-6_DS-Project/renv/library/macos/R-4.5/aarch64-apple-darwin20".
+
+

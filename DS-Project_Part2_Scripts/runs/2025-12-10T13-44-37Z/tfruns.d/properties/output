@@ -1,0 +1,13 @@
+
+> # ==============================================================================
+> # STEP 2 (VARIANT B): DATA BALANCING WITH SMOTE
+> # 
+> # CHANGE L .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(smotefamily) # REQUIRED FOR SMOTE

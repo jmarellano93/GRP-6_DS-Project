@@ -1,0 +1,58 @@
+
+> # ==============================================================================
+> # Assignment 2 MLP (Keras 3 - CPU Version)
+> # ================== .... [TRUNCATED] 
+
+> # ==============================================================================
+> # 1. Hyperparameters (Standard R List)
+> # ====================== .... [TRUNCATED] 
+
+> # ==============================================================================
+> # 2. Load & Prepare Data
+> # ==================================== .... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> # FIX: Keras 3 requires Integers (0-7)
+> raw_labels <- as.integer(data[[target_col]]) - 1
+
+> # Convert to One-Hot Encoding
+> y_all <- to_categorical(raw_labels, num_classes = 8)
+
+> # ==============================================================================
+> # 3. Split Data
+> # ============================================= .... [TRUNCATED] 
+
+> n_rows  <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ]
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # ==============================================================================
+> # 4. Cross-Validation Loop
+> # ================================== .... [TRUNCATED] 
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> results <- data.frame(Fold = integer(k), Val_Acc = numeric(k))
+
+> cat("Starting", k, "-Fold Cross-Validation (Keras 3 CPU)...\n")
+Starting 5 -Fold Cross-Validation (Keras 3 CPU)...
+
+> for (i in seq_len(k)) {
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++   # a. Split
++   val_indices      <- which(folds == i, arr.ind = TRUE) .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---
+Fold 1 | Max Val Acc: 0.8435

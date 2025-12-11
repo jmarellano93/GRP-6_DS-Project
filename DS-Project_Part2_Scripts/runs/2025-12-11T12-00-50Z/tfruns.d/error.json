@@ -1,0 +1,4 @@
+{
+  "message": "attempt to apply non-function",
+  "traceback": ["to_categorical(data[[target_col]], num_classes = 8)", "eval(ei, envir)", "eval(ei, envir)", "training_run(\"/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP.r\")"]
+}

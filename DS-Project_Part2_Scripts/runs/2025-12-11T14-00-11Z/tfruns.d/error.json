@@ -1,0 +1,4 @@
+{
+  "message": "could not find function \"select\"",
+  "traceback": ["as.matrix(.)", "data %>% select(-all_of(target_col)) %>% as.matrix()", "eval(ei, envir)", "eval(ei, envir)", "training_run(\"/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP.r\")"]
+}

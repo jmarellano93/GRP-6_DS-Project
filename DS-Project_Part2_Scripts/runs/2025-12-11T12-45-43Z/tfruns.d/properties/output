@@ -1,0 +1,22 @@
+
+> # ==============================================================================
+> # Assignment 2 MLP (Keras 3 - CPU Version)
+> # ================== .... [TRUNCATED] 
+
+> # ==============================================================================
+> # 1. Hyperparameters (Standard R List)
+> # ====================== .... [TRUNCATED] 
+
+> # ==============================================================================
+> # 2. Load & Prepare Data
+> # ==================================== .... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> # FIX: Keras 3 requires Integers (0-7)
+> raw_labels <- as.integer(data[[target_col]]) - 1
+
+> # Convert to One-Hot Encoding
+> y_all <- to_categorical(raw_labels, num_classes = 8)

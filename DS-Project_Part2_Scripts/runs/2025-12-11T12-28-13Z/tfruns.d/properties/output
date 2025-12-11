@@ -1,0 +1,79 @@
+
+> # ==============================================================================
+> # 0. Environment & Library Setup (Keras 3 + PyTorch)
+> # ======== .... [TRUNCATED] 
+
+> # 1. Point to the NEW environment (M3 PyTorch)
+> use_python("/Users/Jujou/miniforge3/envs/keras3_torch/bin/python", required = TRUE)
+
+> # 2. CRITICAL: Set Backend to TORCH before loading Keras
+> Sys.setenv(KERAS_BACKEND = "torch")
+
+> # 3. Load Libraries
+> library(keras3) 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> # 4. Helper for "Default value if null"
+> `%||%` <- function(x, y) if (is.null(x)) y else x
+
+> # ==============================================================================
+> # 1. Hyperparameter flags
+> # =================================== .... [TRUNCATED] 
+
+> # ==============================================================================
+> # 2. Load & Prepare Data
+> # ==================================== .... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> # FIX: Keras 3 / PyTorch requires Integers (0-7)
+> raw_labels <- as.integer(data[[target_col]]) - 1
+
+> # Keras 3 standard utility (works with PyTorch backend)
+> y_all <- to_categorical(raw_labels, num_classes = 8)
+
+> # ==============================================================================
+> # 3. Split Data
+> # ============================================= .... [TRUNCATED] 
+
+> n_rows  <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ]
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # ==============================================================================
+> # 4. Cross-Validation
+> # ======================================= .... [TRUNCATED] 
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> results <- data.frame(
++   Fold = integer(k),
++   Train_Loss = numeric(k), Val_Loss = numeric(k),
++   Train_Acc = numeric(k), Val_Acc = numeric(k)
++ .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold Cross-Validation on M3 GPU (PyTorch)...\n")
+Starting 5 -Fold Cross-Validation on M3 GPU (PyTorch)...
+
+> for (i in seq_len(k)) {
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++   # a. Split
++   val_indices      <- which(folds == i, arr.ind = TRUE) .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---

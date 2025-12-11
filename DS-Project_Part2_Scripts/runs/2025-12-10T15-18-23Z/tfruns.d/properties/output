@@ -1,0 +1,65 @@
+
+> # Assignment 2 MLP (Multi-Layer Perceptron)
+> # Supports Variable Depth (2 or 3 Layers) and Robust Scaling
+> 
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Regularization
++   flag_numeric("dropout1", 0),
++ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 8)
+
+> # 3. Split Data ----------------------------------------------------------
+> set.seed(42)
+
+> # Holdout Test Set (15%)
+> n_rows <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ] 
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # 4. Cross-Validation Setup ----------------------------------------------
+> k <- 5
+
+> folds <- createFolds(y_cv, k = k, list = FALSE)
+
+> # Initialize Storage
+> results <- data.frame(
++   Fold = integer(),
++   Train_Loss = numeric(),
++   Val_Loss = numeric(), # Check loss function
++    .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold Cross-Validation (Variable Depth)...\n")
+Starting 5 -Fold Cross-Validation (Variable Depth)...
+
+> # 5. Training Loop -------------------------------------------------------
+> for(i in 1:k){
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++    .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---

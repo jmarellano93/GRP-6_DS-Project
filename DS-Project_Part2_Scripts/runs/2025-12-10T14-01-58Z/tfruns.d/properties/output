@@ -1,0 +1,70 @@
+
+> # ==============================================================================
+> # STEP 2 (VARIANT D): FOCAL LOSS
+> # 
+> # CHANGE LOG:
+> # 1. Defi .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow) # Required for custom loss math
+
+> # --- 0. DEFINE CUSTOM FOCAL LOSS FUNCTION -------------------------------
+> # Gamma: Focusing parameter (2.0 is standard). 
+> # Higher gamma = more .... [TRUNCATED] 
+
+> # ------------------------------------------------------------------------
+> 
+> # 1. Hyperparameter flags ------------------------------------------ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 8)
+
+> # 3. Split Data ----------------------------------------------------------
+> set.seed(42)
+
+> # Holdout Test Set (15%)
+> n_rows <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ] 
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # 4. Cross-Validation Setup ----------------------------------------------
+> k <- 5
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> # Initialize Storage
+> results <- data.frame(
++   Fold = integer(),
++   Train_Loss = numeric(),
++   Val_Loss = numeric(),
++   Train_Acc = numeric(), .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold Cross-Validation (With Focal Loss)...\n")
+Starting 5 -Fold Cross-Validation (With Focal Loss)...
+
+> # 5. Training Loop -------------------------------------------------------
+> for(i in 1:k){
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++    .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---

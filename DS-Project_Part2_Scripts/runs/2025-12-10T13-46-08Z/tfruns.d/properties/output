@@ -1,0 +1,133 @@
+
+> # ==============================================================================
+> # STEP 2 (VARIANT B): DATA BALANCING WITH SMOTE
+> # 
+> # CHANGE L .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(smotefamily) # REQUIRED FOR SMOTE
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Regularization
++   flag_numeric("dropout1", 0),
++ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 8)
+
+> # 3. Split Data ----------------------------------------------------------
+> set.seed(42)
+
+> # Holdout Test Set (15%)
+> n_rows <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ] 
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # 4. Cross-Validation Setup ----------------------------------------------
+> k <- 5
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> # Initialize Storage
+> results <- data.frame(
++   Fold = integer(),
++   Train_Loss = numeric(),
++   Val_Loss = numeric(),
++   Train_Acc = numeric(), .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold Cross-Validation (With SMOTE)...\n")
+Starting 5 -Fold Cross-Validation (With SMOTE)...
+
+> # 5. Training Loop -------------------------------------------------------
+> for(i in 1:k){
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++    .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---
+  Running SMOTE... (This may take a moment)
+Fold 1 | Val Acc: 0.8453 | Macro F1: 0.5848 | Bal Acc: 0.7603
+
+--- Processing Fold # 2 ---
+  Running SMOTE... (This may take a moment)
+Fold 2 | Val Acc: 0.8470 | Macro F1: 0.6096 | Bal Acc: 0.7607
+
+--- Processing Fold # 3 ---
+  Running SMOTE... (This may take a moment)
+Fold 3 | Val Acc: 0.8420 | Macro F1: 0.5769 | Bal Acc: 0.7399
+
+--- Processing Fold # 4 ---
+  Running SMOTE... (This may take a moment)
+Fold 4 | Val Acc: 0.8491 | Macro F1: 0.5950 | Bal Acc: 0.7669
+
+--- Processing Fold # 5 ---
+  Running SMOTE... (This may take a moment)
+Fold 5 | Val Acc: 0.8462 | Macro F1: 0.5666 | Bal Acc: 0.7456
+
+> # 6. Final Report --------------------------------------------------------
+> cat("\n========================================\n")
+
+========================================
+
+> cat("      ARCHITECTURE PERFORMANCE          \n")
+      ARCHITECTURE PERFORMANCE          
+
+> cat("            (WITH SMOTE)                \n")
+            (WITH SMOTE)                
+
+> cat("========================================\n")
+========================================
+
+> avg_train_acc <- mean(results$Train_Acc)
+
+> avg_val_acc   <- mean(results$Val_Acc)
+
+> avg_macro_f1  <- mean(results$Val_Macro_F1)
+
+> avg_bal_acc   <- mean(results$Val_Bal_Acc)
+
+> gap <- avg_train_acc - avg_val_acc
+
+> cat("Avg Train Accuracy:   ", round(avg_train_acc, 4), "\n")
+Avg Train Accuracy:    0.9814 
+
+> cat("Avg Val Accuracy:     ", round(avg_val_acc, 4), "\n")
+Avg Val Accuracy:      0.8459 
+
+> cat("Avg Macro F1 Score:   ", round(avg_macro_f1, 4), " (KEY METRIC)\n")
+Avg Macro F1 Score:    0.5866  (KEY METRIC)
+
+> cat("Avg Balanced Acc:     ", round(avg_bal_acc, 4), "\n")
+Avg Balanced Acc:      0.7547 
+
+> cat("Overfitting Gap:      ", round(gap, 4), "\n")
+Overfitting Gap:       0.1355 
+
+> cat("----------------------------------------\n")
+----------------------------------------
+
+> if(gap > 0.05) {
++   cat("WARNING: High Overfitting. SMOTE often requires higher Dropout.\n")
++ } else if(avg_macro_f1 < 0.50) {
++   cat("WARNING: S ..." ... [TRUNCATED] 
+WARNING: High Overfitting. SMOTE often requires higher Dropout.

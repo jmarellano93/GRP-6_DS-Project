@@ -1,0 +1,28 @@
+Starting 5 -Fold Cross-Validation (With Class Weighting)...
+
+--- Processing Fold # 1 ---
+Class Weights for Fold 1:
+         0          1          2          3          4          5          6          7 
+ 4.7651452  1.4558824  0.1621118  1.2967480 12.1395349 43.5000000 80.8732393 21.8326996 
+Fold 1 | Max Val Acc: 0.7778 (at Epoch 88)
+
+--- Processing Fold # 2 ---
+Fold 2 | Max Val Acc: 0.7825 (at Epoch 100)
+
+--- Processing Fold # 3 ---
+Fold 3 | Max Val Acc: 0.7847 (at Epoch 94)
+
+--- Processing Fold # 4 ---
+Fold 4 | Max Val Acc: 0.7808 (at Epoch 95)
+
+--- Processing Fold # 5 ---
+Fold 5 | Max Val Acc: 0.7808 (at Epoch 81)
+
+========================================
+      ARCHITECTURE PERFORMANCE          
+========================================
+Avg Train Accuracy:  0.8825 
+Avg Val Accuracy:    0.7813 
+Overfitting Gap:     0.1012 
+----------------------------------------
+WARNING: High Overfitting. Increase Dropout.

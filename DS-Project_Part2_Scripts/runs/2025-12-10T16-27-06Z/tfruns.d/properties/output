@@ -1,0 +1,130 @@
+
+> # ==============================================================================
+> # STEP 2 (VARIANT D): FOCAL LOSS (CORRECTED)
+> # 
+> # CHANGE LOG: .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow) 
+
+> # --- 0. DEFINE CUSTOM FOCAL LOSS FUNCTION -------------------------------
+> focal_loss <- function(gamma = 2.0, alpha = 0.25) {
++   function(y_true .... [TRUNCATED] 
+
+> # ------------------------------------------------------------------------
+> 
+> # 1. Hyperparameter flags ------------------------------------------ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> # Ensure this path is correct
+> data <- read.csv("/Users/Jujou/Document ..." ... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 8)
+
+> # 3. Split Data ----------------------------------------------------------
+> set.seed(42)
+
+> n_rows <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ] 
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # 4. Cross-Validation Setup ----------------------------------------------
+> k <- 5
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> results <- data.frame(
++   Fold = integer(),
++   Train_Loss = numeric(),
++   Val_Loss = numeric(),
++   Train_Acc = numeric(),
++   Val_Acc = numeric( .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold Cross-Validation (With Focal Loss)...\n")
+Starting 5 -Fold Cross-Validation (With Focal Loss)...
+
+> # 5. Training Loop -------------------------------------------------------
+> for(i in 1:k){
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++    .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---
+Fold 1 | Val Acc: 0.8453 | Macro F1: 0.5927 | Bal Acc: 0.7698
+
+--- Processing Fold # 2 ---
+Fold 2 | Val Acc: 0.8470 | Macro F1: 0.6045 | Bal Acc: 0.7571
+
+--- Processing Fold # 3 ---
+Fold 3 | Val Acc: 0.8394 | Macro F1: 0.5777 | Bal Acc: 0.7397
+
+--- Processing Fold # 4 ---
+Fold 4 | Val Acc: 0.8426 | Macro F1: 0.5973 | Bal Acc: 0.7704
+
+--- Processing Fold # 5 ---
+Fold 5 | Val Acc: 0.8432 | Macro F1: 0.5794 | Bal Acc: 0.7540
+
+> # 6. Final Report --------------------------------------------------------
+> cat("\n========================================\n")
+
+========================================
+
+> cat("      ARCHITECTURE PERFORMANCE          \n")
+      ARCHITECTURE PERFORMANCE          
+
+> cat("      (WITH FOCAL LOSS GAMMA=2.0)       \n")
+      (WITH FOCAL LOSS GAMMA=2.0)       
+
+> cat("========================================\n")
+========================================
+
+> avg_train_acc <- mean(results$Train_Acc)
+
+> avg_val_acc   <- mean(results$Val_Acc)
+
+> avg_macro_f1  <- mean(results$Val_Macro_F1)
+
+> avg_bal_acc   <- mean(results$Val_Bal_Acc)
+
+> gap <- avg_train_acc - avg_val_acc
+
+> cat("Avg Train Accuracy:   ", round(avg_train_acc, 4), "\n")
+Avg Train Accuracy:    0.9632 
+
+> cat("Avg Val Accuracy:     ", round(avg_val_acc, 4), "\n")
+Avg Val Accuracy:      0.8435 
+
+> cat("Avg Macro F1 Score:   ", round(avg_macro_f1, 4), " (KEY METRIC)\n")
+Avg Macro F1 Score:    0.5903  (KEY METRIC)
+
+> cat("Avg Balanced Acc:     ", round(avg_bal_acc, 4), "\n")
+Avg Balanced Acc:      0.7582 
+
+> cat("Overfitting Gap:      ", round(gap, 4), "\n")
+Overfitting Gap:       0.1197 
+
+> cat("----------------------------------------\n")
+----------------------------------------
+
+> if(gap > 0.05) {
++   cat("WARNING: High Overfitting. Focal Loss is working but model is memorizing.\n")
++ } else if(avg_macro_f1 < 0.50) {
++   cat(" ..." ... [TRUNCATED] 
+WARNING: High Overfitting. Focal Loss is working but model is memorizing.

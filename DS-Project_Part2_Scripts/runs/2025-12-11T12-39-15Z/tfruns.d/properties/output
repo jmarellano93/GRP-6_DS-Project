@@ -1,0 +1,33 @@
+
+> # ==============================================================================
+> # 0. Environment Setup
+> # ====================================== .... [TRUNCATED] 
+
+> # Point to your Keras 3 + Torch environment
+> use_python("/Users/Jujou/miniforge3/envs/keras3_torch/bin/python", required = TRUE)
+
+> library(keras3) 
+
+> library(caret)
+
+> library(dplyr)
+
+> # Helper for handling null metrics
+> `%||%` <- function(x, y) if (is.null(x)) y else x
+
+> # ==============================================================================
+> # 1. Hyperparameters
+> # ======================================== .... [TRUNCATED] 
+
+> # ==============================================================================
+> # 2. Load & Prepare Data
+> # ==================================== .... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> # Prepare Labels (Integers 0-7)
+> raw_labels <- as.integer(data[[target_col]]) - 1
+
+> y_all <- to_categorical(raw_labels, num_classes = 8)

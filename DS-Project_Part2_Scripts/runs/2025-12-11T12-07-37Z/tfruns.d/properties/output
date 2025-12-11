@@ -1,0 +1,82 @@
+
+> # ==============================================================================
+> # 0. Environment Setup (M3 Apple Silicon)
+> # =================== .... [TRUNCATED] 
+
+> library(tensorflow)
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> # Force the specific M3 environment we fixed earlier
+> # (This prevents R from wandering off to other Python versions)
+> use_python("/Users/Jujou/mi ..." ... [TRUNCATED] 
+
+> # Helper function for "Default value if null" (replaces %||%)
+> `%||%` <- function(x, y) if (is.null(x)) y else x
+
+> # ==============================================================================
+> # 1. Hyperparameter flags
+> # =================================== .... [TRUNCATED] 
+
+> # ==============================================================================
+> # 2. Load & Prepare Data
+> # ==================================== .... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> # Feature Matrix
+> x_all <- data %>%
++   select(-all_of(target_col)) %>%
++   as.matrix()
+
+> # --- FIX: Target Variable Setup for Python/TensorFlow ---
+> # 1. Convert to strict Integer (Python rejects decimals/floats for classes)
+> # 2. Subt .... [TRUNCATED] 
+
+> # 3. Use tf$keras directly to avoid library mismatches
+> y_all <- tf$keras$utils$to_categorical(raw_labels, num_classes = 8L)
+
+> # ==============================================================================
+> # 3. Split Data
+> # ============================================= .... [TRUNCATED] 
+
+> # Holdout Test Set (15%)
+> n_rows  <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ]
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # ==============================================================================
+> # 4. Cross-Validation Setup
+> # ================================= .... [TRUNCATED] 
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> # Initialize Storage
+> results <- data.frame(
++   Fold       = integer(k),
++   Train_Loss = numeric(k),
++   Val_Loss   = numeric(k),
++   Train_Acc   .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold Cross-Validation (Variable Depth)...\n")
+Starting 5 -Fold Cross-Validation (Variable Depth)...
+
+> # ==============================================================================
+> # 5. Training Loop
+> # ========================================== .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---

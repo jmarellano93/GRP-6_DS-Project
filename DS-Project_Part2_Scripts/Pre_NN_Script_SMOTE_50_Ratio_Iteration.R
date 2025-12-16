@@ -1,6 +1,7 @@
 # ==============================================================================
-# REPORT VERSION 2: UNDERSAMPLING STRATEGY
-# FILENAME: Pre_NN_Script_Undersampling.R
+# REPORT VERSION 1: SMOTE STRATEGY 50 Iterations
+# FILENAME: Pre_NN_Script_SMOTE.R
+# UPDATE COMMENTS IN FILE TO REFLECT THE CHANGE OF ADDING STATUS CODE "1" TO BAD AND THE IMPLICATIONS OF THIS CHANGE.
 # ==============================================================================
 
 # THE CLASSIFICATION OF FINANCIAL RISK ASSIGNMENT CONTEXT AND OBJECTIVE:
@@ -533,7 +534,7 @@ cat("\n--- Module 2 Complete ---\n")
 #
 # KEY DECISIONS:
 # 1. Target Definition: We use "Vintage Analysis" logic. Status 0/C/X are 'Good' (paid/no loan). 
-#    Status 2-5 are 'Bad' (overdue > 60 days). This binary thresholding creates the ground truth.
+#    Status 1-5 are 'Bad' (overdue > 60 days). This binary thresholding creates the ground truth.
 # 2. 365243 Handling: We convert the sentinel value to 0 (meaning "0 days employed") 
 #    but create a binary flag 'EMPLOYMENT_STATUS_FLAG'. This preserves the information 
 #    that they are Not Working without distorting the numeric scale of days employed.
@@ -554,10 +555,11 @@ if ("status" %in% names(df_clean)) {
   cat("Constructing Target Variable (Recovering Bad Instances)...\n")
   df_clean <- df_clean %>%
     mutate(
-      # Logic: Status 2, 3, 4, 5 are BAD (1). Others are GOOD (0).
+      # Logic: Status 1, 2, 3, 4, 5 are BAD (1). Others are GOOD (0).
+      # UPDATE: Added "1" (30-59 days past due) to the Bad class.
       TARGET = case_when(
-        status %in% c("2", "3", "4", "5") ~ 1,
-        status %in% c("C", "X", "0", "1") ~ 0,
+        status %in% c("1", "2", "3", "4", "5") ~ 1, 
+        status %in% c("C", "X", "0") ~ 0,
         TRUE ~ NA_real_
       ),
       TARGET = as.factor(TARGET)
@@ -945,7 +947,7 @@ cat(">> SUCCESS: Final cleaned dataset saved to:", clean_data_path, "\n")
 #
 # 1. Target Variable Reconstruction (Vintage Definition):
 #    OBSERVATION: You have defined the "Bad" class (TARGET = 1) strictly as
-#    statuses {2, 3, 4, 5}. Status {1} (30-59 DPD) has been grouped with "Good".
+#    statuses {1, 2, 3, 4, 5}.
 #    IMPLICATION: This results in a hyper-imbalanced dataset (approx 98% Good vs
 #    2% Bad). While this creates a high-purity ground truth (ignoring "soft"
 #    defaults), it imposes a massive burden on the Neural Network to find the
@@ -1014,23 +1016,24 @@ cat(">> SUCCESS: Final cleaned dataset saved to:", clean_data_path, "\n")
 #    predominantly have NA occupation).
 
 # ==============================================================================
-# Module 5: Advanced Preprocessing & Data Splitting (UNDERSAMPLING VERSION)
+# MODULE 5 & 6 COMBINED: MULTI-RATIO PIPELINE GENERATION (50 SMOTE Variations)
 # ==============================================================================
 # METHODOLOGY: 
-# In this version, we utilize Random Undersampling to handle class imbalance.
-# Instead of synthesizing new minority examples (SMOTE), we randomly remove 
-# majority examples until the classes are balanced (1:1 ratio).
-#
-# ADVANTAGE: Extremely fast training (dataset size reduced by ~90%).
-# DISADVANTAGE: Potential loss of information from the majority class.
+# 1. Stratified Split: Isolate Validation/Test sets (these MUST remain real/raw).
+# 2. Base Recipe: Apply Log-Transform and Imputation (Static steps).
+# 3. SMOTE Loop: We iterate through 50 different oversampling ratios.
+#    - For each ratio, we generate synthetic data on the Training set only.
+#    - We apply One-Hot Encoding and Min-Max Scaling.
+#    - We convert to Matrix immediately and save to disk to manage memory.
 
 cat("\n================================================================\n")
-cat(" MODULE 5: PREPROCESSING PIPELINE (TIDYMODELS) - FIXED\n")
+cat(" MODULE 5 & 6 COMBINED: MULTI-RATIO PIPELINE GENERATION\n")
 cat("================================================================\n")
 
 # --- 5.1 Stratified Data Splitting ---
 set.seed(123)
 
+# Ensure target is factor
 df_clean$TARGET <- as.factor(df_clean$TARGET)
 
 cat("Partitioning Data (70/15/15) with Stratification...\n")
@@ -1041,171 +1044,503 @@ val_raw <- validation(split_obj)
 test_raw <- testing(split_obj)
 
 cat("Split Complete:\n")
-cat("Training Set: ", nrow(train_raw), "rows\n")
+cat("Training Set (Base): ", nrow(train_raw), "rows\n")
 cat("Validation Set: ", nrow(val_raw), "rows\n")
 cat("Testing Set: ", nrow(test_raw), "rows\n")
 
-# --- 5.1b Calculate Capping Thresholds (Training Data Only) ---
-# [No changes to capping logic needed - preserved for anti-leakage]
-if("AMT_INCOME_TOTAL" %in% names(train_raw)) {
-  inc_cap <- quantile(train_raw$AMT_INCOME_TOTAL, 0.99, na.rm = TRUE)
-} else { inc_cap <- Inf }
-
-if("CNT_CHILDREN" %in% names(train_raw)) {
-  child_cap <- quantile(train_raw$CNT_CHILDREN, 0.995, na.rm = TRUE)
-} else { child_cap <- Inf }
-
-if("CNT_FAM_MEMBERS" %in% names(train_raw)) {
-  fam_cap <- quantile(train_raw$CNT_FAM_MEMBERS, 0.995, na.rm = TRUE)
-} else { fam_cap <- Inf }
-
-# --- 5.2 Define the Base Recipe (Common Steps) ---
+# --- 5.2 Define the Base Recipe (Static Steps) ---
+# These steps are common to ALL variations and do not involve resampling.
 base_recipe <- recipe(TARGET ~., data = train_raw) %>%
-  
-  # 1. Role Update
   update_role(any_of("ID"), new_role = "id") %>%
-  
-  # [NEW] 1.5 Remove Collinear Feature
-  # JUSTIFICATION: 
-  # [cite_start]1. Statistical Redundancy: CNT_FAM_MEMBERS is highly correlated (~0.88) with CNT_CHILDREN[cite: 292].
-  # 2. Conceptual Redundancy: Family Size is effectively (Children + Adults). Since 'NAME_FAMILY_STATUS' 
-  #    already encodes the number of adults (Married vs Single), this variable adds no new information.
-  # 3. Neural Network Stability: Removing this redundancy prevents the network from splitting gradients 
-  #    between two identical signals, improving convergence.
-  step_rm(CNT_FAM_MEMBERS) %>%
-  
-  # 2. Imputation
-  # Even though df_clean is currently empty of NAs, keeping step_impute_median and step_unknown 
-  # in the recipe is Critical Best Practice.
+  step_rm(any_of("CNT_FAM_MEMBERS")) %>% # Remove collinear feature
   step_impute_median(all_numeric_predictors()) %>%
   step_unknown(all_nominal_predictors()) %>%
-  
-  # 3. Winsorization
-  # NOTE: CNT_FAM_MEMBERS removed from here because the column is dropped above.
-  step_mutate(
-    AMT_INCOME_TOTAL = pmin(AMT_INCOME_TOTAL, !!inc_cap),
-    CNT_CHILDREN = pmin(CNT_CHILDREN, !!child_cap)
-  ) %>%
-  
-  # 4. Log Transformation (Fixes Geometric Invalidity for SMOTE later)
+  # Log transformation (Crucial before SMOTE calculation)
   step_log(AMT_INCOME_TOTAL, offset = 1) %>%
-  
-  # 5. Zero Variance
   step_zv(all_predictors())
 
-# ==============================================================================
-# STRATEGY: RANDOM UNDERSAMPLING + MIN-MAX SCALING
-# ==============================================================================
-# LOGIC CHANGE: We use step_downsample instead of step_smotenc.
-# under_ratio = 1 means majority class will be reduced to equal minority class.
-
-final_recipe <- base_recipe %>%
-  # Step A: Undersampling
-  # skip = TRUE is mandatory to prevent downsampling the test set
-  step_downsample(TARGET, under_ratio = 1, skip = TRUE) %>%
-  
-  # Step B: One-Hot Encoding
-  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
-  
-  # Step C: Cleanup dummy columns
-  step_zv(all_predictors()) %>%
-  
-  # Step D: Min-Max Scaling 
-  step_range(all_numeric_predictors(), min = 0, max = 1)
-
-strategy_name <- "Random Undersampling + MinMax Scaling"
-
-# --- 5.4 Execute Preprocessing (Baking) ---
-cat(paste("
->> PROCESSING STRATEGY SELECTED:", strategy_name, "
-"))
-
-trained_recipe <- prep(final_recipe, training = train_raw)
-
-train_processed <- bake(trained_recipe, new_data = NULL)
-val_processed <- bake(trained_recipe, new_data = val_raw)
-test_processed <- bake(trained_recipe, new_data = test_raw)
-
-# --- 5.5 Final Diagnostic Check ---
-cat("
-[Final Preprocessing Checks]
-")
-cat("Processed Train Shape: ", dim(train_processed), "x", dim(train_processed), "
-")
-cat("Target Distribution (Train):
-")
-print(table(train_processed$TARGET))
-
-# QA Checks
-if(any(is.na(train_processed))) stop(">> QA FAIL: NAs remain in Processed Training Data!")
-if(max(select(train_processed, where(is.numeric))) > 1.0001) warning(">> QA WARNING: Values > 1 detected. Check step_range.")
-if(min(select(train_processed, where(is.numeric))) < -0.0001) warning(">> QA WARNING: Negative values detected. Check step_range.")
-
-cat(">> QA PASS: Preprocessing pipeline (Undersampling) verified.
-")
-cat("--- Module 5 Complete ---
-")
-
-# ==============================================================================
-# Module 6: Final Data Formatting & Export (Fix C)
-# ==============================================================================
-cat("
-================================================================
-")
-cat(" MODULE 6: DATA EXPORT FOR NEURAL NETWORK 
-")
-cat("================================================================
-")
-
-# --- 6.1 Helper Function: Strict Matrix Conversion ---
+# --- 5.3 Helper Function: Strict Matrix Conversion ---
+# Used to convert processed recipes into Keras-ready tensors
 process_for_keras <- function(df, target_col = "TARGET") {
   y_raw <- df[[target_col]]
+  
+  # Convert features to numeric matrix
   x_matrix <- df %>%
     select(-all_of(target_col)) %>%
     mutate(across(everything(), as.numeric)) %>%
     as.matrix()
+  
   dimnames(x_matrix) <- NULL
+  
+  # Convert Factor Target to 0/1 Integer
   y_vector <- as.integer(y_raw) - 1
+  
   return(list(x = x_matrix, y = y_vector))
 }
 
-# --- 6.2 Execute Conversion ---
-cat("Converting processed dataframes to Numeric Matrices...
-")
+# --- 5.4 Prepare Output Directory ---
+output_dir <- "processed_data"
+output_dir <- "C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_Part2_Scripts/Saved_Outputs/Pre_NN_Script_SMOTE_50_Ratio_Iterations"
 
-train_keras <- process_for_keras(train_processed)
-val_keras <- process_for_keras(val_processed) 
+if(!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+# Create a sub-folder specifically for the training variations
+train_output_dir <- file.path(output_dir, "smote_variations")
+if(!dir.exists(train_output_dir)) dir.create(train_output_dir)
+
+# --- 5.5 Process and Save Static Sets (Validation & Test) ---
+# Validation and Test sets NEVER undergo SMOTE. We process them once.
+cat("\nProcessing Static Validation and Test Sets...\n")
+
+# Create a "dummy" recipe just to finalize the encoding/scaling for Val/Test
+# We use ratio=0 or skip SMOTE to get the structure logic
+static_recipe <- base_recipe %>%
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+  step_zv(all_predictors()) %>%
+  step_range(all_numeric_predictors(), min = 0, max = 1)
+
+static_prep <- prep(static_recipe, training = train_raw)
+
+val_processed  <- bake(static_prep, new_data = val_raw)
+test_processed <- bake(static_prep, new_data = test_raw)
+
+val_keras  <- process_for_keras(val_processed)
 test_keras <- process_for_keras(test_processed)
 
-# Diagnostic Check
-cat("Final Training Matrix Shape:", dim(train_keras$x), "
-")
-cat("Final Target Vector Shape:  ", length(train_keras$y), "
-")
-
-# [QA CHECK] Tensor Structure
-if(!is.matrix(train_keras$x)) stop(">> QA FAIL: Training Features (x) are not a Matrix.")
-if(!is.numeric(train_keras$x)) stop(">> QA FAIL: Training Features (x) are not Numeric.")
-if(any(is.na(train_keras$x))) stop(">> QA FAIL: NaNs found in Final Training Matrix.")
-cat(">> QA PASS: Data structures are valid for Keras.
-")
-
-# --- 6.3 Save to Disk ---
-output_dir <- "processed_data_undersampled"
-if(!dir.exists(output_dir)) dir.create(output_dir)
-
-cat("
-Saving formatted tensors to:", output_dir, "...
-")
-saveRDS(train_keras, file.path(output_dir, "train_tensor.rds"))
 saveRDS(val_keras, file.path(output_dir, "val_tensor.rds"))
 saveRDS(test_keras, file.path(output_dir, "test_tensor.rds"))
+cat(">> Static Validation and Test tensors saved.\n")
 
-# [QA CHECK] File I/O
-if(!file.exists(file.path(output_dir, "train_tensor.rds"))) stop(">> QA FAIL: Train Tensor file not saved.")
-cat(">> QA PASS: Files saved successfully.
-")
+# ==============================================================================
+# 50 SMOTE RATIO LOOP
+# ==============================================================================
 
-cat(">> SUCCESS: Data is ready for Neural Network Training (Undersampled).
-")
+# Define 50 ratios from 0.05 (very slight oversampling) to 1.0 (perfect balance)
+# Note: The raw minority class is approx 0.02.
+smote_ratios <- seq(0.05, 1.0, length.out = 50)
 
+cat("\nBeginning Generation of 50 SMOTE Training Variations...\n")
+
+# Initialize a tracking dataframe to store statistics about the generated sets
+stats_log <- data.frame(
+  Iteration = integer(),
+  Ratio = numeric(),
+  Rows = integer(),
+  Minority_Count = integer(),
+  Majority_Count = integer(),
+  Filename = character()
+)
+
+for (i in seq_along(smote_ratios)) {
+  
+  current_ratio <- smote_ratios[i]
+  
+  # 1. Define specific recipe with current ratio
+  loop_recipe <- base_recipe %>%
+    # Apply SMOTE with current ratio
+    step_smotenc(TARGET, over_ratio = current_ratio, skip = TRUE) %>%
+    # Standard Encoding and Scaling
+    step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+    step_zv(all_predictors()) %>%
+    step_range(all_numeric_predictors(), min = 0, max = 1)
+  
+  # 2. Prep and Bake (Generate Synthetic Data)
+  # We wrap in tryCatch to handle potential edge cases with extreme ratios
+  tryCatch({
+    trained_rec <- prep(loop_recipe, training = train_raw)
+    train_baked <- bake(trained_rec, new_data = NULL)
+    
+    # 3. Convert to Keras Matrix
+    train_keras_loop <- process_for_keras(train_baked)
+    
+    # 4. Generate Filename
+    # Format: train_tensor_ratio_0.50.rds
+    fname <- sprintf("train_tensor_ratio_%.4f.rds", current_ratio)
+    save_path <- file.path(train_output_dir, fname)
+    
+    # 5. Save
+    saveRDS(train_keras_loop, save_path)
+    
+    # 6. Log Statistics
+    tgt_counts <- table(train_baked$TARGET)
+    
+    # Assuming '0' is majority and '1' is minority (Bad)
+    maj_n <- tgt_counts["0"]
+    min_n <- tgt_counts["1"]
+    
+    stats_log <- rbind(stats_log, data.frame(
+      Iteration = i,
+      Ratio = current_ratio,
+      Rows = nrow(train_baked),
+      Minority_Count = as.integer(min_n),
+      Majority_Count = as.integer(maj_n),
+      Filename = fname
+    ))
+    
+    # Print progress every 5 iterations
+    if(i %% 5 == 0) {
+      cat(sprintf("[%d/50] Ratio %.3f processed. New Shape: %d rows (Bad: %d, Good: %d)\n", 
+                  i, current_ratio, nrow(train_baked), min_n, maj_n))
+    }
+    
+  }, error = function(e) {
+    cat(sprintf(">> ERROR at Ratio %.3f: %s\n", current_ratio, e$message))
+  })
+}
+
+# --- Save the Log ---
+write.csv(stats_log, file.path(output_dir, "smote_generation_log.csv"), row.names = FALSE)
+
+cat("\n================================================================\n")
+cat(" PIPELINE COMPLETE \n")
+cat("================================================================\n")
+cat("1. Static 'val_tensor.rds' and 'test_tensor.rds' saved in:", output_dir, "\n")
+cat("2. 50 distinct Training tensors saved in:", train_output_dir, "\n")
+cat("3. Generation log saved as 'smote_generation_log.csv'.\n")
+cat(">> NEXT STEP: Configure your Neural Network to loop through the files in 'smote_variations'.\n")
+
+# ==============================================================================
+# Module 7: Iterative Neural Network Training (OPTIMIZED TUNING)
+# ==============================================================================
+
+cat("\n================================================================\n")
+cat(" MODULE 7: SMOTE OPTIMIZATION LOOP (TUNED & ROBUST)\n")
+cat("================================================================\n")
+
+library(reticulate)
+
+# --- 7.1 Load Static Evaluation Sets ---
+# CHANGED: Use the dynamic output_dir variable
+val_data  <- readRDS(file.path(output_dir, "val_tensor.rds"))
+test_data <- readRDS(file.path(output_dir, "test_tensor.rds"))
+input_dim <- ncol(val_data$x)
+
+# --- 7.2 PRE-CONVERT TO NUMPY (FLOAT32) ---
+val_x_np  <- np_array(val_data$x, dtype = "float32")
+val_y_np  <- np_array(val_data$y, dtype = "float32")
+test_x_np <- np_array(test_data$x, dtype = "float32")
+test_y_np <- np_array(test_data$y, dtype = "float32")
+
+# --- 7.3 Helper Function: Comprehensive Metrics ---
+calculate_comprehensive_metrics <- function(y_true, y_pred_prob, threshold = 0.5) {
+  y_true <- as.numeric(as.vector(y_true))
+  y_pred_prob <- as.numeric(as.vector(y_pred_prob))
+  y_pred_class <- ifelse(y_pred_prob >= threshold, 1, 0)
+  
+  cm <- table(factor(y_true, levels=c(0,1)), factor(y_pred_class, levels=c(0,1)))
+  TN <- as.numeric(cm[1,1]); FP <- as.numeric(cm[1,2])
+  FN <- as.numeric(cm[2,1]); TP <- as.numeric(cm[2,2])
+  
+  Accuracy     <- (TP + TN) / (TP + TN + FP + FN)
+  Precision    <- ifelse((TP + FP) == 0, 0, TP / (TP + FP))
+  Recall       <- ifelse((TP + FN) == 0, 0, TP / (TP + FN))
+  Specificity  <- ifelse((TN + FP) == 0, 0, TN / (TN + FP)) 
+  F1_Score     <- ifelse((Precision + Recall) == 0, 0, 2 * (Precision * Recall) / (Precision + Recall))
+  Balanced_Acc <- (Recall + Specificity) / 2
+  
+  numerator <- (TP * TN) - (FP * FN)
+  denominator <- sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+  MCC <- ifelse(denominator == 0, 0, numerator / denominator)
+  
+  # Probabilistic Metrics
+  epsilon <- 1e-15
+  y_pred_clipped <- pmax(epsilon, pmin(1 - epsilon, y_pred_prob))
+  Log_Loss <- -mean(y_true * log(y_pred_clipped) + (1 - y_true) * log(1 - y_pred_clipped))
+  Brier_Score <- mean((y_pred_prob - y_true)^2)
+  
+  # Cohen's Kappa
+  total <- TP + TN + FP + FN
+  p_e <- (((TP + FP) / total) * ((TP + FN) / total)) + (((TN + FN) / total) * ((TN + FP) / total))
+  Kappa <- ifelse((1 - p_e) == 0, 0, (Accuracy - p_e) / (1 - p_e))
+  
+  # F-Beta (Beta=2)
+  beta <- 2
+  F_Beta <- ifelse((Precision + Recall) == 0, 0, (1 + beta^2) * (Precision * Recall) / ((beta^2 * Precision) + Recall))
+  
+  return(list(
+    TP=TP, TN=TN, FP=FP, FN=FN,
+    Accuracy=Accuracy, Precision=Precision, Recall=Recall, Specificity=Specificity, 
+    F1=F1_Score, Balanced_Acc=Balanced_Acc, MCC=MCC, Kappa=Kappa, F_Beta=F_Beta,
+    Log_Loss=Log_Loss, Brier_Score=Brier_Score
+  ))
+}
+
+# --- 7.4 Define Parameterized Model Builder ---
+# Updated to accept hyperparams for future tuning
+build_model <- function(input_shape, units_1 = 128, dropout_1 = 0.4) {
+  inputs <- layer_input(shape = c(input_shape))
+  
+  predictions <- inputs %>%
+    layer_dense(units = units_1) %>%
+    layer_batch_normalization() %>%
+    layer_activation("relu") %>%
+    layer_dropout(rate = dropout_1) %>%
+    # Layer 2 scaled relative to Layer 1
+    layer_dense(units = max(32, units_1 / 2)) %>%
+    layer_activation("relu") %>%
+    layer_dropout(rate = max(0.1, dropout_1 - 0.1)) %>%
+    layer_dense(units = 1, activation = "sigmoid")
+  
+  model <- keras_model(inputs = inputs, outputs = predictions)
+  model$compile(
+    loss = "binary_crossentropy",
+    optimizer = optimizer_adam(learning_rate = 0.001),
+    metrics = list("AUC") 
+  )
+  return(model)
+}
+
+# --- 7.5 Initialize Results Container ---
+# Added 'Optimal_Threshold' column
+results_df <- data.frame(
+  Ratio = numeric(),
+  Optimal_Threshold = numeric(), # <--- NEW
+  TP = integer(), TN = integer(), FP = integer(), FN = integer(),
+  Accuracy = numeric(), Precision = numeric(), Recall = numeric(), Specificity = numeric(), 
+  F1 = numeric(), Balanced_Acc = numeric(), MCC = numeric(), Kappa = numeric(), 
+  F_Beta = numeric(), Log_Loss = numeric(), Brier_Score = numeric()
+)
+
+# --- 7.6 The Optimized Training Loop ---
+smote_files <- list.files(train_output_dir, full.names = TRUE, pattern = "\\.rds$")
+cb <- list(callback_early_stopping(monitor = "val_loss", patience = 5, restore_best_weights = TRUE, verbose = 0))
+start_time_global <- Sys.time()
+
+for (f_path in smote_files) {
+  
+  ratio_val <- as.numeric(str_extract(basename(f_path), "\\d+\\.\\d+"))
+  train_data <- readRDS(f_path)
+  
+  # Convert to Numpy
+  train_x_np <- np_array(train_data$x, dtype = "float32")
+  train_y_np <- np_array(train_data$y, dtype = "float32")
+  
+  model <- build_model(input_dim, units_1 = 128, dropout_1 = 0.4) # Can be varied if needed
+  
+  # --- UPDATE 1: ADD CLASS WEIGHTS ---
+  # Penalize missing the minority class (1) 2.5x more than majority
+  history <- model$fit(
+    x = train_x_np, y = train_y_np,
+    epochs = 25L, batch_size = 512L,
+    validation_data = list(val_x_np, val_y_np),
+    class_weight = list("0" = 1.0, "1" = 2.5), # <--- NEW
+    callbacks = cb, verbose = 0L
+  )
+  
+  # Predict probabilities
+  val_probs <- model$predict(val_x_np, verbose = 0L)
+  
+  # --- UPDATE 2: DYNAMIC THRESHOLD SCANNING ---
+  # Instead of hardcoding 0.5, we scan for the best MCC
+  thresholds <- seq(0.1, 0.9, by = 0.05)
+  best_mcc_local <- -1
+  best_thresh_local <- 0.5
+  best_metrics <- NULL
+  
+  for(t in thresholds) {
+    curr_metrics <- calculate_comprehensive_metrics(val_data$y, val_probs, threshold = t)
+    if(curr_metrics$MCC > best_mcc_local) {
+      best_mcc_local <- curr_metrics$MCC
+      best_thresh_local <- t
+      best_metrics <- curr_metrics
+    }
+  }
+  
+  # Log the BEST result found
+  rec <- data.frame(
+    Ratio = ratio_val,
+    Optimal_Threshold = best_thresh_local, # Save for Module 8
+    TP = best_metrics$TP, TN = best_metrics$TN, FP = best_metrics$FP, FN = best_metrics$FN,
+    Accuracy = best_metrics$Accuracy, Precision = best_metrics$Precision, 
+    Recall = best_metrics$Recall, Specificity = best_metrics$Specificity, 
+    F1 = best_metrics$F1, Balanced_Acc = best_metrics$Balanced_Acc, 
+    MCC = best_metrics$MCC, Kappa = best_metrics$Kappa, F_Beta = best_metrics$F_Beta,
+    Log_Loss = best_metrics$Log_Loss, Brier_Score = best_metrics$Brier_Score
+  )
+  
+  results_df <- rbind(results_df, rec)
+  
+  cat(sprintf(">> Ratio %.4f | Best Thresh: %.2f | MCC: %.4f | Bal.Acc: %.4f\n", 
+              ratio_val, best_thresh_local, best_metrics$MCC, best_metrics$Balanced_Acc))
+  
+  rm(train_data, train_x_np, train_y_np, model, history, val_probs)
+  gc(verbose = FALSE)
+}
+
+# ==============================================================================
+# Module 7.5: Hyperparameter Tuning (The "Brain" Optimization)
+# ==============================================================================
+# STRATEGY: 
+# We now take the WINNING SMOTE ratio from Module 7 and tune the Network Architecture.
+# We test different combinations of Width (Units), Regularization (Dropout), and Learning Rate.
+
+cat("\n================================================================\n")
+cat(" MODULE 7.5: ARCHITECTURE GRID SEARCH (ON BEST SMOTE DATA)\n")
+cat("================================================================\n")
+
+# 1. Identify the Winner from Phase 1 (Data Optimization)
+best_smote_row <- results_df %>% arrange(desc(MCC)) %>% slice(1)
+winning_ratio <- best_smote_row$Ratio
+cat(sprintf(">> Phase 1 Winner: SMOTE Ratio %.4f (MCC: %.4f)\n", winning_ratio, best_smote_row$MCC))
+
+# 2. Load the Winning Dataset ONCE
+best_file_path <- list.files(train_output_dir, 
+                             pattern = sprintf("ratio_%.4f", winning_ratio), 
+                             full.names = TRUE)
+train_best_data <- readRDS(best_file_path)
+
+# Convert to Float32 NumPy for Keras 3
+train_x_best <- np_array(train_best_data$x, dtype = "float32")
+train_y_best <- np_array(train_best_data$y, dtype = "float32")
+
+# 3. Define the Hyperparameter Grid
+# We test: 
+# - Complexity: Small vs Large Networks
+# - Regularization: Low vs High Dropout
+# - Speed: Standard vs Slow Learning Rate
+hyper_grid <- expand.grid(
+  Units_L1 = c(64, 128, 256),
+  Dropout  = c(0.2, 0.4, 0.5),
+  LR       = c(0.001, 0.0001)
+)
+hyper_grid$ID <- 1:nrow(hyper_grid)
+
+cat(sprintf(">> Starting Grid Search across %d architectures...\n", nrow(hyper_grid)))
+
+# Container for Tuning Results
+tuning_results <- data.frame()
+
+for(i in 1:nrow(hyper_grid)) {
+  
+  # Extract params for this run
+  u <- hyper_grid$Units_L1[i]
+  d <- hyper_grid$Dropout[i]
+  lr <- hyper_grid$LR[i]
+  
+  # Build Custom Model
+  # Note: We must redefine compile inside to apply the new LR
+  inputs <- layer_input(shape = c(input_dim))
+  preds <- inputs %>%
+    layer_dense(units = u) %>%
+    layer_batch_normalization() %>%
+    layer_activation("relu") %>%
+    layer_dropout(rate = d) %>%
+    layer_dense(units = max(32, u / 2)) %>%
+    layer_activation("relu") %>%
+    layer_dropout(rate = max(0.1, d - 0.1)) %>%
+    layer_dense(units = 1, activation = "sigmoid")
+  
+  model_tune <- keras_model(inputs = inputs, outputs = preds)
+  model_tune$compile(
+    loss = "binary_crossentropy",
+    optimizer = optimizer_adam(learning_rate = lr),
+    metrics = list("AUC")
+  )
+  
+  # Train
+  history <- model_tune$fit(
+    x = train_x_best, y = train_y_best,
+    epochs = 20L, batch_size = 512L, # Slightly fewer epochs for tuning speed
+    validation_data = list(val_x_np, val_y_np),
+    class_weight = list("0" = 1.0, "1" = 2.5),
+    callbacks = cb, verbose = 0L
+  )
+  
+  # Predict & Threshold Scan
+  probs <- model_tune$predict(val_x_np, verbose = 0L)
+  
+  # Quick Threshold Scan (0.1 to 0.9)
+  best_mcc_grid <- -1
+  best_thresh_grid <- 0.5
+  
+  for(t in seq(0.1, 0.9, by=0.05)) {
+    m <- calculate_comprehensive_metrics(val_data$y, probs, threshold = t)$MCC
+    if(m > best_mcc_grid) {
+      best_mcc_grid <- m
+      best_thresh_grid <- t
+    }
+  }
+  
+  # Log Results
+  cat(sprintf("   [%d/%d] Units: %3d | Drop: %.1f | LR: %.4f || MCC: %.4f (Thresh: %.2f)\n", 
+              i, nrow(hyper_grid), u, d, lr, best_mcc_grid, best_thresh_grid))
+  
+  tuning_results <- rbind(tuning_results, data.frame(
+    Grid_ID = i,
+    Units = u, Dropout = d, LR = lr,
+    MCC = best_mcc_grid, Opt_Thresh = best_thresh_grid
+  ))
+  
+  rm(model_tune, history, probs)
+  gc(verbose=FALSE)
+}
+
+# ==============================================================================
+# Module 8: Final Model Selection & Export
+# ==============================================================================
+
+cat("\n================================================================\n")
+cat(" MODULE 8: FINAL CONFIGURATION SELECTION\n")
+cat("================================================================\n")
+
+# 1. Select the Winner from Phase 2 (Hyperparameter Tuning)
+best_config <- tuning_results %>% arrange(desc(MCC)) %>% slice(1)
+
+cat(">> WINNING HYPERPARAMETERS:\n")
+print(best_config)
+
+final_units <- best_config$Units
+final_drop  <- best_config$Dropout
+final_lr    <- best_config$LR
+final_thresh <- best_config$Opt_Thresh
+
+# 2. Re-Train the Final Champion Model (Full Epochs)
+cat("\n[Final Step] Training CHAMPION Model (Full Epochs) on Test Set...\n")
+
+# Rebuild Model using Winning Config
+inputs <- layer_input(shape = c(input_dim))
+preds <- inputs %>%
+  layer_dense(units = final_units) %>%
+  layer_batch_normalization() %>%
+  layer_activation("relu") %>%
+  layer_dropout(rate = final_drop) %>%
+  layer_dense(units = max(32, final_units / 2)) %>%
+  layer_activation("relu") %>%
+  layer_dropout(rate = max(0.1, final_drop - 0.1)) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+final_model <- keras_model(inputs = inputs, outputs = preds)
+final_model$compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_adam(learning_rate = final_lr),
+  metrics = list("AUC")
+)
+
+# Fit on the Winning SMOTE Data
+final_model$fit(
+  x = train_x_best, y = train_y_best, # Defined in Module 7.5
+  epochs = 40L, # Full training schedule
+  batch_size = 512L,
+  validation_data = list(val_x_np, val_y_np),
+  class_weight = list("0" = 1.0, "1" = 2.5),
+  callbacks = cb, verbose = 0L
+)
+
+# 3. Final Evaluation on Test Set
+test_probs <- final_model$predict(test_x_np, verbose = 0L)
+
+# Apply the OPTIMIZED THRESHOLD from the grid search
+test_metrics <- calculate_comprehensive_metrics(test_data$y, test_probs, threshold = final_thresh)
+
+cat("\n--------------------------------------------------------\n")
+cat(sprintf(" FINAL TEST RESULTS (Optimized Model)\n"))
+cat("--------------------------------------------------------\n")
+cat(sprintf("Configuration:  Units=%d, Drop=%.1f, LR=%.4f\n", final_units, final_drop, final_lr))
+cat(sprintf("Decision Cuts:  SMOTE=%.2f, Threshold=%.2f\n\n", winning_ratio, final_thresh))
+cat(sprintf("MCC:            %.4f\n", test_metrics$MCC))
+cat(sprintf("Balanced Acc:   %.4f\n", test_metrics$Balanced_Acc))
+cat(sprintf("Recall (Sens):  %.4f\n", test_metrics$Recall))
+cat(sprintf("Precision:      %.4f\n", test_metrics$Precision))
+cat("--------------------------------------------------------\n")
+
+final_model$save(file.path(output_dir, "best_model_tuned_final.keras"))

@@ -1,49 +1,50 @@
 # ==============================================================================
-# REPORT VERSION 3: UPSAMPLING STRATEGY
-# FILENAME: Pre_NN_Script_Upsampling.R
+# REPORT VERSION 2: COST-SENSITIVE LEARNING (CLASS WEIGHTING) STRATEGY
+# FILENAME: Pre_NN_Script_ClassWeights_Optimization.R
+# UPDATE COMMENTS IN FILE TO REFLECT THE CHANGE OF ADDING STATUS CODE "1" TO BAD AND THE IMPLICATIONS OF THIS CHANGE.
 # ==============================================================================
 
 # THE CLASSIFICATION OF FINANCIAL RISK ASSIGNMENT CONTEXT AND OBJECTIVE:
 
-# The assignment rubric, "Classification Course Assignment.pdf," outlines a classification task rooted in the domain of credit risk assessment. 
-# Unlike image recognition or natural language processing, where the signal is spatially or temporally encoded, financial classification relies on 
-# extracting latent behavioral patterns from static demographic snapshots and historical performance logs. The assignment rubric emphasizes the 
+# The assignment rubric, "Classification Course Assignment.pdf," outlines a classification task rooted in the domain of credit risk assessment. 
+# Unlike image recognition or natural language processing, where the signal is spatially or temporally encoded, financial classification relies on 
+# extracting latent behavioral patterns from static demographic snapshots and historical performance logs. The assignment rubric emphasizes the 
 # necessity of learning from data, which implies that we must demonstrate how the raw inputs are transformed into a probability density function representing the likelihood of default.
 
-# In this specific context, "Classification" is not a binary distinct state but a thresholding exercise on a continuous risk probability. 
-# The neural network must learn to distinguish between "Good" and "Bad" credit applicants. However, the definition of these labels is not 
-# intrinsic to the raw data; it is a derived property based on the status variable. The rubric's focus on "A Credit Card Dataset for Machine Learning" 
-# suggests that the data likely originates from a vintage analysis system, where performance is tracked over time windows. 
-# This introduces a temporal dimension to the classification problem: are we predicting default in the next month, or the probability of ever defaulting? 
+# In this specific context, "Classification" is not a binary distinct state but a thresholding exercise on a continuous risk probability. 
+# The neural network must learn to distinguish between "Good" and "Bad" credit applicants. However, the definition of these labels is not 
+# intrinsic to the raw data; it is a derived property based on the status variable. The rubric's focus on "A Credit Card Dataset for Machine Learning" 
+# suggests that the data likely originates from a vintage analysis system, where performance is tracked over time windows. 
+# This introduces a temporal dimension to the classification problem: are we predicting default in the next month, or the probability of ever defaulting? 
 # The neural network architecture must reflect this goal.
 
 # NEURAL NETWORK SPECIFICITY AND RIGOR CONSIDERATIONS:
 
 # Homogeneity of Scale:
-# Unlike decision trees, which are scale-invariant, neural networks require all input features to be on a similar magnitude 
-# (typically normalized to mean 0, variance 1, or scaled between 0 and 1). If AMT_INCOME_TOTAL ranges in the hundreds of thousands while 
-# CNT_CHILDREN ranges from 0 to 5, the gradients associated with the income variable will dominate the optimization process, preventing the 
+# Unlike decision trees, which are scale-invariant, neural networks require all input features to be on a similar magnitude 
+# (typically normalized to mean 0, variance 1, or scaled between 0 and 1). If AMT_INCOME_TOTAL ranges in the hundreds of thousands while 
+# CNT_CHILDREN ranges from 0 to 5, the gradients associated with the income variable will dominate the optimization process, preventing the 
 # network from learning from the number of children.
 
 # Representation of Topology:
-# The network assumes that the input space is a continuous manifold. This makes the representation of categorical 
-# variables (like OCCUPATION_TYPE) critical. Simple ordinal encoding introduces spurious mathematical relationships 
+# The network assumes that the input space is a continuous manifold. This makes the representation of categorical 
+# variables (like OCCUPATION_TYPE) critical. Simple ordinal encoding introduces spurious mathematical relationships 
 # (e.g., implying that "Laborers" > "Accountants"), whereas One-Hot encoding expands the dimensionality significantly.
 
 # Missing Data Intolerance:
-# Neural networks cannot perform matrix multiplication with NaN (Not a Number) values. The assignment requires a rigorous, 
+# Neural networks cannot perform matrix multiplication with NaN (Not a Number) values. The assignment requires a rigorous, 
 # theoretically justified strategy for imputation, particularly for the Non-Random Missingness observed in the dataset.
 
 # ==============================================================================
 # Module 1: Environment Setup
 # ==============================================================================
-# METHODOLOGY: 
-# This section ensures Reprodicibility, a core tenet of data science. 
-# 1. Scientific Notation: We disable this because 'ID' fields (e.g., 5008804) can strictly be interpreted 
-#    by R as numeric doubles. If R converts them to "5.00e+06", we lose the unique identifier.
-# 2. Reticulate/TensorFlow: The assignment requires a Neural Network. Keras in R is an interface 
-#    to Python. We must explicitly bind the R session to a specific Python environment to prevent 
-#    path conflicts and ensure the backend is available for computation.
+# METHODOLOGY: 
+# This section ensures Reprodicibility, a core tenet of data science. 
+# 1. Scientific Notation: We disable this because 'ID' fields (e.g., 5008804) can strictly be interpreted 
+#    by R as numeric doubles. If R converts them to "5.00e+06", we lose the unique identifier.
+# 2. Reticulate/TensorFlow: The assignment requires a Neural Network. Keras in R is an interface 
+#    to Python. We must explicitly bind the R session to a specific Python environment to prevent 
+#    path conflicts and ensure the backend is available for computation.
 
 # --- Package Installation Logic ---
 # Automated dependency management ensures reproducibility across different grading environments.
@@ -149,7 +150,7 @@ df <- load_data("C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Proj
 # ==============================================================================
 # PURPOSE: To explore the raw dataset and identify Data Quality issues that must be resolved in Module 3.
 #
-# JUSTIFICATION: 
+# JUSTIFICATION: 
 # Blindly feeding data into a Neural Network results in "Garbage In, Garbage Out."
 # We use this module to detect:
 # 1. Zero Variance: Features that don't change (like FLAG_MOBIL) contribute 0 gradients and should be dropped.
@@ -168,7 +169,7 @@ if(!dir.exists(plot_output_dir)) dir.create(plot_output_dir, recursive = TRUE)
 
 # Open the PDF device
 # All subsequent plots will be written to this file until dev.off() is called
-pdf(file = file.path(plot_output_dir, "All_Project_Visualizations.pdf"), 
+pdf(file = file.path(plot_output_dir, "All_Project_Visualizations_Weights.pdf"), 
     width = 11, height = 8.5) # Standard landscape letter size
 
 cat(">> PDF Graphics Device Opened. Plots will be saved to:", plot_output_dir, "\n")
@@ -278,7 +279,7 @@ if("AMT_INCOME_TOTAL" %in% names(df)) {
 # Mathematical Analysis: 365,243 days / 365.25 = 1000 years. This is a physical impossibility.
 # Context: In legacy banking systems (COBOL/Mainframe), this is a sentinel value for "Infinity" or "Not Applicable."
 # Evidence: Cross-tabulation confirms 100% overlap between 365243 and NAME_INCOME_TYPE == 'Pensioner'.
-# Risk Assessment: Leaving this as numeric will severely skew Mean/SD during Z-score scaling, 
+# Risk Assessment: Leaving this as numeric will severely skew Mean/SD during Z-score scaling, 
 # collapsing the variance of valid employment data and preventing the NN from learning tenure risk.
 # Action: Value will be converted to NA and flagged with a binary indicator 'IS_PENSIONER' in Module 3.
 
@@ -327,7 +328,7 @@ if("DAYS_EMPLOYED" %in% names(df)) {
   print(table(df$NAME_INCOME_TYPE[df$DAYS_EMPLOYED == 365243]))
 }
 
-# --- Phase 5: MNAR,  ---
+# --- Phase 5: MNAR,  ---
 # MNAR Evidence: Missing Occupation by Income Type
 # FINDING: This stacked bar chart visually confirms Missing Not At Random (MNAR). Pensioners have near 100% missing occupation data, justifying the creation of a 'Retired' category during imputation.
 p_mnar <- df %>%
@@ -351,192 +352,192 @@ cat("\n--- Module 2 Complete ---\n")
 
 # GENERAL SUMMARY:
 #
-# The "Dataset-part-2.csv" and the associated assignment present a scenario that 
-# mimics the complexities of real-world financial data science. The initial 
-# analysis confirms that a naive application of a neural network to this raw 
-# data would result in a failed model. The dataset is characterized by legacy 
-# system artifacts (the 365243 anomaly), semantic ambiguities (the status 
+# The "Dataset-part-2.csv" and the associated assignment present a scenario that 
+# mimics the complexities of real-world financial data science. The initial 
+# analysis confirms that a naive application of a neural network to this raw 
+# data would result in a failed model. The dataset is characterized by legacy 
+# system artifacts (the 365243 anomaly), semantic ambiguities (the status 
 # variable), and severe class imbalance.
 #
-# These challenges are surmountable through the rigorous data engineering 
-# strategy outlined below. By treating the data preparation not as a preliminary 
-# chore but as a core component of the model architecture, the student can 
-# satisfy the "academic rigor" and "reproducibility" requirements of the rubric. 
-# The transformation of the status variable into a binary target provides a 
-# clear optimization landscape for the network. The rigorous scaling and anomaly 
-# handling ensure that the loss function surface is smooth and navigable by 
+# These challenges are surmountable through the rigorous data engineering 
+# strategy outlined below. By treating the data preparation not as a preliminary 
+# chore but as a core component of the model architecture, the student can 
+# satisfy the "academic rigor" and "reproducibility" requirements of the rubric. 
+# The transformation of the status variable into a binary target provides a 
+# clear optimization landscape for the network. The rigorous scaling and anomaly 
+# handling ensure that the loss function surface is smooth and navigable by 
 # gradient descent.
 #
-# Ultimately, the success of this neural network classification system will 
-# depend less on the depth of the network layers and more on the integrity of 
+# Ultimately, the success of this neural network classification system will 
+# depend less on the depth of the network layers and more on the integrity of 
 # the input features.
 
 # ------------------------------------------------------------------------------
 # RAW DATASET ANALYSIS
 # ------------------------------------------------------------------------------
-# The dataset provided is a comma-separated values file representing a snapshot 
-# of applicant characteristics joined with a performance label. A granular, 
-# column-by-column inspection reveals a mixture of continuous, categorical, and 
-# binary variables, each presenting specific challenges for neural network 
+# The dataset provided is a comma-separated values file representing a snapshot 
+# of applicant characteristics joined with a performance label. A granular, 
+# column-by-column inspection reveals a mixture of continuous, categorical, and 
+# binary variables, each presenting specific challenges for neural network 
 # ingestion.
 
 # 1. Structural Variables and Identifiers:
-#    - The ID Column: The dataset begins with an ID column (e.g., 5008804). 
-#      The autogenerated plots confirm that this variable follows a uniform 
-#      distribution across the range of 5,000,000 to 8,000,000.
-#    - Theoretical Implication: In the context of deep learning, a high-cardinality 
-#      identifier acts as a unique hash. A network with sufficient capacity will 
-#      trivially "memorize" the mapping between ID and target, achieving perfect 
-#      training accuracy but zero validation accuracy (Overfitting).
-#    - Actionable Strategy: The ID column must be strictly excluded from the 
-#      input tensor. It contains zero intrinsic predictive signal.
+#    - The ID Column: The dataset begins with an ID column (e.g., 5008804). 
+#      The autogenerated plots confirm that this variable follows a uniform 
+#      distribution across the range of 5,000,000 to 8,000,000.
+#    - Theoretical Implication: In the context of deep learning, a high-cardinality 
+#      identifier acts as a unique hash. A network with sufficient capacity will 
+#      trivially "memorize" the mapping between ID and target, achieving perfect 
+#      training accuracy but zero validation accuracy (Overfitting).
+#    - Actionable Strategy: The ID column must be strictly excluded from the 
+#      input tensor. It contains zero intrinsic predictive signal.
 
 # 2. The Status Column (Ground Truth):
-#    The raw data reveals a heterogeneous mix of alphanumeric codes:
-#    - C: Paid off or current for the month (Good).
-#    - X: No loan for the month or inactive (Neutral/Good).
-#    - 0: 1-29 days past due (Actionable, but often considered "Good").
-#    - 1: 30-59 days past due (The beginning of delinquency).
-#    - 2: 60-89 days past due.
-#    - 3: 90-119 days past due.
-#    - 4: 120-149 days past due.
-#    - 5: Overdue or bad debts, write-offs (>150 days).
+#    The raw data reveals a heterogeneous mix of alphanumeric codes:
+#    - C: Paid off or current for the month (Good).
+#    - X: No loan for the month or inactive (Neutral/Good).
+#    - 0: 1-29 days past due (Actionable, but often considered "Good").
+#    - 1: 30-59 days past due (The beginning of delinquency).
+#    - 2: 60-89 days past due.
+#    - 3: 90-119 days past due.
+#    - 4: 120-149 days past due.
+#    - 5: Overdue or bad debts, write-offs (>150 days).
 #
-#    - Distributional Reality: R output confirms Status '0' is the overwhelming 
-#      majority (52,133 rows / 77.1%). True "Bad" class {2,3,4,5} is a minority 
-#      (1,395 rows / ~2.06%).
-#    - Semantic Ambiguity: Neural networks require numerical targets. We cannot 
-#      feed 'C' into a loss function.
-#      - The "Good" Definition: {C, X, 0} -> Class 0.
-#      - The "Bad" Definition: {2, 3, 4, 5} -> Class 1.
-#      - The Ambiguity of "1": Status 1 (9.60%) is a grey area. We must document 
-#        the decision to binarize at Status >= 2 to define true default.
+#    - Distributional Reality: R output confirms Status '0' is the overwhelming 
+#      majority (52,133 rows / 77.1%). True "Bad" class {2,3,4,5} is a minority 
+#      (1,395 rows / ~2.06%).
+#    - Semantic Ambiguity: Neural networks require numerical targets. We cannot 
+#      feed 'C' into a loss function.
+#      - The "Good" Definition: {C, X, 0} -> Class 0.
+#      - The "Bad" Definition: {2, 3, 4, 5} -> Class 1.
+#      - The Ambiguity of "1": Status 1 (9.60%) is a grey area. We must document 
+#        the decision to binarize at Status >= 2 to define true default.
 
 # 3. The "365243" Anomaly: A Case Study in Legacy Data
-#    - Observation: The DAYS_EMPLOYED column contains the integer 365243 
-#      (~1,000 years).
-#    - Socio-economic Correlation: Every instance corresponds to "Pensioner".
-#    - Origin: A sentinel value from legacy COBOL banking systems for "N/A".
-#    - Neural Network Consequence: Catastrophic. Because valid days are negative 
-#      (e.g., -5000), this massive positive outlier collapses the variance during 
-#      scaling. The network will drown out other signals.
-#    - Remediation: 
-#      1. Isolation: Create binary feature IS_PENSIONER.
-#      2. Imputation: Replace 365243 with 0 or NaN (then mean-impute).
+#    - Observation: The DAYS_EMPLOYED column contains the integer 365243 
+#      (~1,000 years).
+#    - Socio-economic Correlation: Every instance corresponds to "Pensioner".
+#    - Origin: A sentinel value from legacy COBOL banking systems for "N/A".
+#    - Neural Network Consequence: Catastrophic. Because valid days are negative 
+#      (e.g., -5000), this massive positive outlier collapses the variance during 
+#      scaling. The network will drown out other signals.
+#    - Remediation: 
+#      1. Isolation: Create binary feature IS_PENSIONER.
+#      2. Imputation: Replace 365243 with 0 or NaN (then mean-impute).
 
 # 4. Demographic Features and Continuous Variables
-#    - DAYS_BIRTH: Negative integers. Convert to positive years (|x|/365.25) to 
-#      improve interpretability and scaling.
-#    - AMT_INCOME_TOTAL: Follows a Pareto distribution (heavy right skew). 
-#      Log Transformation (log(1+x)) is crucial before Z-score standardization 
-#      to compress magnitude differences.
-#    - CNT_CHILDREN: Discrete numerical. Outliers exist (up to 19). Must be 
-#      capped (Winsorized) to prevent rare leverage points from distorting weights.
+#    - DAYS_BIRTH: Negative integers. Convert to positive years (|x|/365.25) to 
+#      improve interpretability and scaling.
+#    - AMT_INCOME_TOTAL: Follows a Pareto distribution (heavy right skew). 
+#      Log Transformation (log(1+x)) is crucial before Z-score standardization 
+#      to compress magnitude differences.
+#    - CNT_CHILDREN: Discrete numerical. Outliers exist (up to 19). Must be 
+#      capped (Winsorized) to prevent rare leverage points from distorting weights.
 
 # 5. Categorical High-Cardinality Variables
-#    - OCCUPATION_TYPE: Presents Missing Not At Random (MNAR) data. Pensioners 
-#      have NA for occupation (99.12% rate). Imputation must introduce a 
-#      "Retired" category rather than a generic mode.
-#    - NAME_HOUSING_TYPE / FAMILY_STATUS: String labels must be One-Hot Encoded 
-#      or Embedded. "Rented" vs "House" carries significant predictive power.
+#    - OCCUPATION_TYPE: Presents Missing Not At Random (MNAR) data. Pensioners 
+#      have NA for occupation (99.12% rate). Imputation must introduce a 
+#      "Retired" category rather than a generic mode.
+#    - NAME_HOUSING_TYPE / FAMILY_STATUS: String labels must be One-Hot Encoded 
+#      or Embedded. "Rented" vs "House" carries significant predictive power.
 
 # 6. Binary Flags
-#    - Variance Check: If var(FLAG_MOBIL) == 0, the column adds no information 
-#      and must be dropped to save computational cost.
+#    - Variance Check: If var(FLAG_MOBIL) == 0, the column adds no information 
+#      and must be dropped to save computational cost.
 
 # ------------------------------------------------------------------------------
 # ANALYSIS OF SCRIPT OUTPUTS AND PLOTS
 # ------------------------------------------------------------------------------
 # 1. Target Distribution: Severe Class Imbalance
-#    - Visual Evidence: The histogram shows negligible bars for delinquency 
-#      vs status '0'.
-#    - Neural Network Failure Mode: Without intervention, the network will 
-#      converge to a "Zero-Rule" baseline (predicting "Good" for everyone), 
-#      achieving 97% accuracy but 0% Recall.
-#    - Required Intervention: SMOTE (Resampling) and Weighted Binary Cross-Entropy.
+#    - Visual Evidence: The histogram shows negligible bars for delinquency 
+#      vs status '0'.
+#    - Neural Network Failure Mode: Without intervention, the network will 
+#      converge to a "Zero-Rule" baseline (predicting "Good" for everyone), 
+#      achieving 97% accuracy but 0% Recall.
+#    - Required Intervention: SMOTE (Resampling) and Weighted Binary Cross-Entropy.
 
 # 2. Distribution of Identifiers
-#    - Visual Confirmation: The plot shows a uniform rectangular block, confirming 
-#      ID is noise.
+#    - Visual Confirmation: The plot shows a uniform rectangular block, confirming 
+#      ID is noise.
 
 # 3. Outlier Visualization
-#    - The plots confirm outliers in Children Count, necessitating capping logic.
+#    - The plots confirm outliers in Children Count, necessitating capping logic.
 
 # ------------------------------------------------------------------------------
 # ARCHITECTURAL PLANS AND R/TIDYVERSE IMPLEMENTATION
 # ------------------------------------------------------------------------------
-# Based on the forensic analysis of the data and plots, we can now formulate the 
-# specific data engineering strategy. This strategy aligns with the "expert in 
-# R, tidyverse" persona, leveraging the recipes package for reproducible 
+# Based on the forensic analysis of the data and plots, we can now formulate the 
+# specific data engineering strategy. This strategy aligns with the "expert in 
+# R, tidyverse" persona, leveraging the recipes package for reproducible 
 # preprocessing pipelines.
 
-# 1. The Tidyverse Preprocessing Recipe: 
-#    In the R ecosystem, the recipes package is the standard for preparing data 
-#    for models (including Keras/TensorFlow). The pipeline implemented in 
-#    Module 5 is:
+# 1. The Tidyverse Preprocessing Recipe: 
+#    In the R ecosystem, the recipes package is the standard for preparing data 
+#    for models (including Keras/TensorFlow). The pipeline implemented in 
+#    Module 5 is:
 #
-#    - Step 1: Role Assignment:
-#      Define status as the outcome (after binarization) and ID as an ID role 
-#      (to be excluded from training).
+#    - Step 1: Role Assignment:
+#      Define status as the outcome (after binarization) and ID as an ID role 
+#      (to be excluded from training).
 #
-#    - Step 2: Imputation:
-#      step_impute_median: Used for all numeric predictors (more robust to 
-#      skewed financial data than mean).
-#      step_unknown: For OCCUPATION_TYPE (fills NA with "unknown").
+#    - Step 2: Imputation:
+#      step_impute_median: Used for all numeric predictors (more robust to 
+#      skewed financial data than mean).
+#      step_unknown: For OCCUPATION_TYPE (fills NA with "unknown").
 #
-#    - Step 3: Geometric Correction (Crucial for SMOTE):
-#      step_log: Apply to AMT_INCOME_TOTAL. This compresses the order of 
-#      magnitude differences, ensuring that distance-based algorithms (like 
-#      SMOTE) do not ignore other features due to the income scale.
+#    - Step 3: Geometric Correction (Crucial for SMOTE):
+#      step_log: Apply to AMT_INCOME_TOTAL. This compresses the order of 
+#      magnitude differences, ensuring that distance-based algorithms (like 
+#      SMOTE) do not ignore other features due to the income scale.
 #
-#    - Step 4: Class Balancing:
-#      step_smotenc: Generate synthetic samples for the minority class. 
-#      Applied *after* log-transform to ensure geometric validity.
+#    - Step 4: Class Balancing:
+#      step_smotenc: Generate synthetic samples for the minority class. 
+#      Applied *after* log-transform to ensure geometric validity.
 #
-#    - Step 5: Encoding:
-#      step_dummy: One-Hot encode all nominal predictors to create the binary 
-#      vectors the network expects.
+#    - Step 5: Encoding:
+#      step_dummy: One-Hot encode all nominal predictors to create the binary 
+#      vectors the network expects.
 #
-#    - Step 6: Scaling (Rubric Compliance):
-#      step_range: Apply Min-Max scaling to force all values into [0, 1]. 
-#      *Note:* We explicitly chose this over Z-score standardization to satisfy 
-#      the specific requirement in the assignment rubric.
+#    - Step 6: Scaling (Rubric Compliance):
+#      step_range: Apply Min-Max scaling to force all values into [0, 1]. 
+#      *Note:* We explicitly chose this over Z-score standardization to satisfy 
+#      the specific requirement in the assignment rubric.
 
 # 2. Neural Network Topology Recommendations (Plan for NN Script):
-#    Given the tabular nature of the data (~50 features after encoding, ~90k rows), 
-#    a Multi-Layer Perceptron (MLP) is appropriate.
+#    Given the tabular nature of the data (~50 features after encoding, ~90k rows), 
+#    a Multi-Layer Perceptron (MLP) is appropriate.
 #
-#    - Input Layer: Dimension equal to the processed feature set.
-#    - Hidden Layer 1: Dense, 64-128 units, Activation = ReLU.
-#      Rationale: ReLU mitigates the vanishing gradient problem.
-#    - Batch Normalization: Inserted after activation.
-#      Rationale: Stabilizes learning by re-centering layer inputs.
-#    - Dropout: Rate 0.3 - 0.5.
-#      Rationale: Critical for preventing overfitting given the class imbalance.
-#    - Hidden Layer 2: Dense, 32-64 units, Activation = ReLU.
-#    - Output Layer: Dense, 1 unit, Activation = Sigmoid.
-#      Rationale: We need a probability [0,1] for binary classification.
+#    - Input Layer: Dimension equal to the processed feature set.
+#    - Hidden Layer 1: Dense, 64-128 units, Activation = ReLU.
+#      Rationale: ReLU mitigates the vanishing gradient problem.
+#    - Batch Normalization: Inserted after activation.
+#      Rationale: Stabilizes learning by re-centering layer inputs.
+#    - Dropout: Rate 0.3 - 0.5.
+#      Rationale: Critical for preventing overfitting given the class imbalance.
+#    - Hidden Layer 2: Dense, 32-64 units, Activation = ReLU.
+#    - Output Layer: Dense, 1 unit, Activation = Sigmoid.
+#      Rationale: We need a probability [0,1] for binary classification.
 
 # 3. Metric Selection and Evaluation:
-#    - Primary Metric: Area Under the Precision-Recall Curve (AUPRC). Focuses 
-#      on the minority class performance.
-#    - Validation Strategy: Stratified K-Fold Cross-Validation is necessary to 
-#      ensure that the minority class is represented in every validation fold.
+#    - Primary Metric: Area Under the Precision-Recall Curve (AUPRC). Focuses 
+#      on the minority class performance.
+#    - Validation Strategy: Stratified K-Fold Cross-Validation is necessary to 
+#      ensure that the minority class is represented in every validation fold.
 
 # ==============================================================================
 # Module 3: Row-Wise Cleaning & Logic Features (Refactored)
 # ==============================================================================
-# METHODOLOGY: 
+# METHODOLOGY: 
 # This module implements the fixes identified in Sections 3.1 - 3.5.
-# Order of operations is critical: Target Engineering must happen BEFORE filtering 
+# Order of operations is critical: Target Engineering must happen BEFORE filtering 
 # to ensure we do not discard the minority class (Section 3.1).
 #
 # KEY DECISIONS:
-# 1. Target Definition: We use "Vintage Analysis" logic. Status 0/C/X are 'Good' (paid/no loan). 
-#    Status 2-5 are 'Bad' (overdue > 60 days). This binary thresholding creates the ground truth.
-# 2. 365243 Handling: We convert the sentinel value to 0 (meaning "0 days employed") 
-#    but create a binary flag 'EMPLOYMENT_STATUS_FLAG'. This preserves the information 
-#    that they are Not Working without distorting the numeric scale of days employed.
+# 1. Target Definition: We use "Vintage Analysis" logic. Status 0/C/X are 'Good' (paid/no loan). 
+#    Status 1-5 are 'Bad' (overdue > 60 days). This binary thresholding creates the ground truth.
+# 2. 365243 Handling: We convert the sentinel value to 0 (meaning "0 days employed") 
+#    but create a binary flag 'EMPLOYMENT_STATUS_FLAG'. This preserves the information 
+#    that they are Not Working without distorting the numeric scale of days employed.
 
 cat("\n================================================================\n")
 cat(" MODULE 3: DATA CLEANING & LOGIC (NO LEAKAGE)\n")
@@ -547,17 +548,18 @@ df_clean <- df
 
 # --- Phase 1: Target Variable Reconstruction (Vintage Logic) ---
 # Note: If this dataset is a snapshot (one row per ID), we apply the logic to the current status.
-# If you have the raw monthly credit file, you would perform the group_by(ID) aggregation 
+# If you have the raw monthly credit file, you would perform the group_by(ID) aggregation 
 # BEFORE merging into this dataset.
 
 if ("status" %in% names(df_clean)) {
   cat("Constructing Target Variable (Recovering Bad Instances)...\n")
   df_clean <- df_clean %>%
     mutate(
-      # Logic: Status 2, 3, 4, 5 are BAD (1). Others are GOOD (0).
+      # Logic: Status 1, 2, 3, 4, 5 are BAD (1). Others are GOOD (0).
+      # UPDATE: Added "1" (30-59 days past due) to the Bad class.
       TARGET = case_when(
-        status %in% c("2", "3", "4", "5") ~ 1,
-        status %in% c("C", "X", "0", "1") ~ 0,
+        status %in% c("1", "2", "3", "4", "5") ~ 1, 
+        status %in% c("C", "X", "0") ~ 0,
         TRUE ~ NA_real_
       ),
       TARGET = as.factor(TARGET)
@@ -932,107 +934,20 @@ write.csv(df_clean, file = clean_data_path, row.names = FALSE)
 cat(">> SUCCESS: Final cleaned dataset saved to:", clean_data_path, "\n")
 
 # ==============================================================================
-# REPORT: MODULE 3 (CLEANING) & MODULE 4 (DIAGNOSTICS) ANALYSIS
+# Module 5: Hybrid Data Preparation (Variable SMOTE Generation)
 # ==============================================================================
-# AUTHOR: Senior Data Science Mentor
-# CONTEXT: Neural Network Classification Assignment
-# DATE:   December 14, 2025
-# ==============================================================================
-
-# ------------------------------------------------------------------------------
-# SECTION 1: CRITIQUE OF MODULE 3 CLEANING OPERATIONS
-# ------------------------------------------------------------------------------
-#
-# 1. Target Variable Reconstruction (Vintage Definition):
-#    OBSERVATION: You have defined the "Bad" class (TARGET = 1) strictly as
-#    statuses {2, 3, 4, 5}. Status {1} (30-59 DPD) has been grouped with "Good".
-#    IMPLICATION: This results in a hyper-imbalanced dataset (approx 98% Good vs
-#    2% Bad). While this creates a high-purity ground truth (ignoring "soft"
-#    defaults), it imposes a massive burden on the Neural Network to find the
-#    signal.
-#    RECOMMENDATION: In Module 5 (Resampling), ensuring the minority class is
-#    oversampled to at least 10-15% is no longer optional; it is mandatory.
-#    Without SMOTE, your model will collapse to a "Zero-Rule" classifier (98% acc).
-#
-# 2. Handling the '365243' DAYS_EMPLOYED Anomaly:
-#    OBSERVATION: The max value in 'cleaned_dataset.csv' for DAYS_EMPLOYED is
-#    17,531. The 365243 sentinel is successfully removed.
-#    VERIFICATION: You effectively replaced the sentinel with 0 and likely created
-#    a corresponding flag (EMPLOYMENT_STATUS_FLAG).
-#    NN CONTEXT: This is excellent. Neural Networks are distance-sensitive.
-#    Had 365243 remained, the gradient updates for this feature would have been
-#    orders of magnitude larger than for AGE, destabilizing the weights.
-#
-# 3. Categorical Encoding (Education):
-#    OBSERVATION: 'EDUCATION_LEVEL' appears as an integer (1-5) in the cleaned CSV.
-#    ANALYSIS: You chose Ordinal Encoding over One-Hot for Education.
-#    PROS: Preserves the rank order (Secondary < Higher < Academic). Reduces dimensionality.
-#    CONS: Implies the distance between 'Secondary' and 'Incomplete Higher' is
-#    mathematically equal to 'Incomplete Higher' and 'Higher'. This is an
-#    acceptable assumption for this assignment.
-#
-# 4. Multicollinearity Management:
-#    OBSERVATION: The correlation between CNT_CHILDREN and CNT_FAM_MEMBERS is 0.88.
-#    ACTION ITEM: While Decision Trees handle collinearity well, Neural Networks
-#    share weights across features. High collinearity introduces redundancy.
-#    Consider dropping CNT_FAM_MEMBERS in the recipe if training diverges, as
-#    CNT_CHILDREN likely carries the clearer signal.
-#
-# ------------------------------------------------------------------------------
-# SECTION 2: ANALYSIS OF MODULE 4 OUTPUTS (PLOTS & STATISTICS)
-# ------------------------------------------------------------------------------
-#
-# 1. Risk Stratification (The "Municipal" Signal):
-#    FINDING: Your risk tables show 'Municipal apartment' residents have a default
-#    rate of ~3.9%, nearly double the population average (~2.0%).
-#    INTERPRETATION: This is a strong non-linear signal. A simple linear logistic
-#    regression might miss this specific interaction unless explicitly encoded.
-#    A Neural Network with adequate hidden layers (ReLU activation) should be able
-#    to "segment" this risk pocket automatically.
-#
-# 2. Scaling Verification (Rubric Compliance):
-#    FINDING: The "Verification of Min-Max Scaling" boxplots in your PDF explicitly
-#    show all numeric features bounded strictly within [0, 1].
-#    VERDICT: PASS.
-#    THEORETICAL NOTE: Why [0,1]? Because you are using a Sigmoid output layer.
-#    If inputs were Z-scaled (unbounded), large outliers could saturate the
-#    sigmoid function early in the network, causing "Vanishing Gradients."
-#    Min-Max is the safer architectural choice here.
-#
-# 3. The Log-Transformation Necessity:
-#    FINDING: The "Distribution: AMT_INCOME_TOTAL" plot confirms the heavy
-#    right-skew (Pareto distribution).
-#    CRITICAL CHECK: Ensure `step_log(AMT_INCOME_TOTAL)` happens BEFORE
-#    `step_range` in your recipe. If you Min-Max scale a skewed distribution,
-#    99% of your data gets squashed into the [0, 0.05] range, destroying variance.
-#    Your recipe order in Module 5 appears correct.
-#
-# 4. Final Missingness Check:
-#    STATUS: Zero missing values detected in 'cleaned_dataset.csv'.
-#    NOTE: Your `step_unknown` strategy for OCCUPATION_TYPE was necessary.
-#    Dropping those rows would have biased the model against Pensioners (who
-#    predominantly have NA occupation).
-
-# ==============================================================================
-# Module 5: Advanced Preprocessing & Data Splitting (UPSAMPLING VERSION)
-# ==============================================================================
-# METHODOLOGY: 
-# In this version, we utilize Random Upsampling to handle class imbalance.
-# We randomly replicate minority examples until the classes are balanced (1:1 ratio).
-#
-# ADVANTAGE: Zero information loss from the majority class.
-# DISADVANTAGE: Risk of overfitting (memorization) of the minority class.
+# STRATEGY:
+# To support a hybrid grid search (SMOTE x Weighting), we cannot rely on a single
+# dataset. We must generate a spectrum of SMOTE datasets, ranging from 
+# Ratio 0.1 (Minimal Oversampling) to Ratio 1.0 (Full Balancing).
 
 cat("\n================================================================\n")
-cat(" MODULE 5: PREPROCESSING PIPELINE (TIDYMODELS) - FIXED\n")
+cat(" MODULE 5: HYBRID PREPROCESSING (GENERATING SMOTE SPECTRUM)\n")
 cat("================================================================\n")
 
 # --- 5.1 Stratified Data Splitting ---
 set.seed(123)
-
 df_clean$TARGET <- as.factor(df_clean$TARGET)
-
-cat("Partitioning Data (70/15/15) with Stratification...\n")
 split_obj <- initial_validation_split(df_clean, prop = c(0.7, 0.15), strata = TARGET)
 
 train_raw <- training(split_obj)
@@ -1044,121 +959,18 @@ cat("Training Set: ", nrow(train_raw), "rows\n")
 cat("Validation Set: ", nrow(val_raw), "rows\n")
 cat("Testing Set: ", nrow(test_raw), "rows\n")
 
-# --- 5.1b Calculate Capping Thresholds (Training Data Only) ---
-# [No changes to capping logic needed - preserved for anti-leakage]
-if("AMT_INCOME_TOTAL" %in% names(train_raw)) {
-  inc_cap <- quantile(train_raw$AMT_INCOME_TOTAL, 0.99, na.rm = TRUE)
-} else { inc_cap <- Inf }
-
-if("CNT_CHILDREN" %in% names(train_raw)) {
-  child_cap <- quantile(train_raw$CNT_CHILDREN, 0.995, na.rm = TRUE)
-} else { child_cap <- Inf }
-
-if("CNT_FAM_MEMBERS" %in% names(train_raw)) {
-  fam_cap <- quantile(train_raw$CNT_FAM_MEMBERS, 0.995, na.rm = TRUE)
-} else { fam_cap <- Inf }
-
-# --- 5.2 Define the Base Recipe (Common Steps) ---
+# --- 5.2 Define the Base Recipe ---
 base_recipe <- recipe(TARGET ~., data = train_raw) %>%
-  
-  # 1. Role Update
   update_role(any_of("ID"), new_role = "id") %>%
-  
-  # [NEW] 1.5 Remove Collinear Feature
-  # JUSTIFICATION: 
-  # [cite_start]1. Statistical Redundancy: CNT_FAM_MEMBERS is highly correlated (~0.88) with CNT_CHILDREN[cite: 292].
-  # 2. Conceptual Redundancy: Family Size is effectively (Children + Adults). Since 'NAME_FAMILY_STATUS' 
-  #    already encodes the number of adults (Married vs Single), this variable adds no new information.
-  # 3. Neural Network Stability: Removing this redundancy prevents the network from splitting gradients 
-  #    between two identical signals, improving convergence.
-  step_rm(CNT_FAM_MEMBERS) %>%
-  
-  # 2. Imputation
-  # Even though df_clean is currently empty of NAs, keeping step_impute_median and step_unknown 
-  # in the recipe is Critical Best Practice.
+  step_rm(any_of("CNT_FAM_MEMBERS")) %>%
   step_impute_median(all_numeric_predictors()) %>%
   step_unknown(all_nominal_predictors()) %>%
-  
-  # 3. Winsorization
-  # NOTE: CNT_FAM_MEMBERS removed from here because the column is dropped above.
-  step_mutate(
-    AMT_INCOME_TOTAL = pmin(AMT_INCOME_TOTAL, !!inc_cap),
-    CNT_CHILDREN = pmin(CNT_CHILDREN, !!child_cap)
-  ) %>%
-  
-  # 4. Log Transformation (Fixes Geometric Invalidity for SMOTE later)
   step_log(AMT_INCOME_TOTAL, offset = 1) %>%
-  
-  # 5. Zero Variance
-  step_zv(all_predictors())
-
-# ==============================================================================
-# STRATEGY: RANDOM UPSAMPLING + MIN-MAX SCALING
-# ==============================================================================
-# LOGIC CHANGE: We use step_upsample.
-# over_ratio = 1 means minority class will be replicated to equal majority class.
-
-final_recipe <- base_recipe %>%
-  # Step A: Upsampling
-  # skip = TRUE is mandatory. Never upsample validation data.
-  step_upsample(TARGET, over_ratio = 1, skip = TRUE) %>%
-  
-  # Step B: One-Hot Encoding
   step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
-  
-  # Step C: Cleanup
   step_zv(all_predictors()) %>%
-  
-  # Step D: Min-Max Scaling 
   step_range(all_numeric_predictors(), min = 0, max = 1)
 
-strategy_name <- "Random Upsampling + MinMax Scaling"
-
-# --- 5.4 Execute Preprocessing (Baking) ---
-cat(paste("
->> PROCESSING STRATEGY SELECTED:", strategy_name, "
-"))
-
-trained_recipe <- prep(final_recipe, training = train_raw)
-train_processed <- bake(trained_recipe, new_data = NULL)
-val_processed <- bake(trained_recipe, new_data = val_raw)
-test_processed <- bake(trained_recipe, new_data = test_raw)
-
-# --- 5.5 Final Diagnostic Check ---
-cat("
-[Final Preprocessing Checks]
-")
-cat("Processed Train Shape: ", dim(train_processed), "x", dim(train_processed), "
-")
-cat("Target Distribution (Train):
-")
-print(table(train_processed$TARGET))
-
-# QA Checks
-if(any(is.na(train_processed))) stop(">> QA FAIL: NAs remain in Processed Training Data!")
-if(max(select(train_processed, where(is.numeric))) > 1.0001) warning(">> QA WARNING: Values > 1 detected. Check step_range.")
-if(min(select(train_processed, where(is.numeric))) < -0.0001) warning(">> QA WARNING: Negative values detected. Check step_range.")
-
-cat(">> QA PASS: Preprocessing pipeline (Scaling [0,1]) verified.\n")
-cat("\n--- Module 5 Complete ---\n")
-cat(">> QA PASS: Preprocessing pipeline (Upsampling) verified.
-")
-cat("
---- Module 5 Complete ---
-")
-
-# ==============================================================================
-# Module 6: Final Data Formatting & Export (Fix C)
-# ==============================================================================
-cat("
-================================================================
-")
-cat(" MODULE 6: DATA EXPORT FOR NEURAL NETWORK 
-")
-cat("================================================================
-")
-
-# --- 6.1 Helper Function: Strict Matrix Conversion ---
+# --- 5.3 Helper Function: Matrix Conversion ---
 process_for_keras <- function(df, target_col = "TARGET") {
   y_raw <- df[[target_col]]
   x_matrix <- df %>%
@@ -1170,43 +982,229 @@ process_for_keras <- function(df, target_col = "TARGET") {
   return(list(x = x_matrix, y = y_vector))
 }
 
-# --- 6.2 Execute Conversion ---
-cat("Converting processed dataframes to Numeric Matrices...
-")
+# --- 5.4 Output Directory Setup ---
+output_dir <- "C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_Part2_Scripts/Saved_Outputs/Pre_NN_Script_Hybrid_100_Iterations"
+train_output_dir <- file.path(output_dir, "smote_spectrum")
+if(!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+if(!dir.exists(train_output_dir)) dir.create(train_output_dir)
 
-train_keras <- process_for_keras(train_processed)
-val_keras <- process_for_keras(val_processed) 
-test_keras <- process_for_keras(test_processed)
+# --- 5.5 Process Static Sets (Val/Test) ---
+prep_static <- prep(base_recipe, training = train_raw)
+val_keras   <- process_for_keras(bake(prep_static, new_data = val_raw))
+test_keras  <- process_for_keras(bake(prep_static, new_data = test_raw))
 
-# Diagnostic Check
-cat("Final Training Matrix Shape:", dim(train_keras$x), "
-")
-cat("Final Target Vector Shape:  ", length(train_keras$y), "
-")
-
-# [QA CHECK] Tensor Structure
-if(!is.matrix(train_keras$x)) stop(">> QA FAIL: Training Features (x) are not a Matrix.")
-if(!is.numeric(train_keras$x)) stop(">> QA FAIL: Training Features (x) are not Numeric.")
-if(any(is.na(train_keras$x))) stop(">> QA FAIL: NaNs found in Final Training Matrix.")
-cat(">> QA PASS: Data structures are valid for Keras.
-")
-
-# --- 6.3 Save to Disk ---
-output_dir <- "processed_data_undersampled"
-if(!dir.exists(output_dir)) dir.create(output_dir)
-
-cat("
-Saving formatted tensors to:", output_dir, "...
-")
-saveRDS(train_keras, file.path(output_dir, "train_tensor.rds"))
 saveRDS(val_keras, file.path(output_dir, "val_tensor.rds"))
 saveRDS(test_keras, file.path(output_dir, "test_tensor.rds"))
+cat(">> Static Validation and Test tensors saved.\n")
 
-# [QA CHECK] File I/O
-if(!file.exists(file.path(output_dir, "train_tensor.rds"))) stop(">> QA FAIL: Train Tensor file not saved.")
-cat(">> QA PASS: Files saved successfully.
-")
+# --- 5.6 Generate 10 Levels of SMOTE Data ---
+# We generate 10 datasets. Later, the model loop will combine these with weights.
+smote_levels <- seq(0.1, 1.0, length.out = 10)
 
-cat(">> SUCCESS: Data is ready for Neural Network Training (Undersampled).
-")
+cat("\nGenerating 10 SMOTE Base Datasets (Ratio 0.1 to 1.0)...\n")
 
+for (ratio in smote_levels) {
+  tryCatch({
+    # Add SMOTE step dynamically
+    smote_recipe <- base_recipe %>%
+      step_smotenc(TARGET, over_ratio = ratio, skip = TRUE) %>%
+      step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+      step_zv(all_predictors()) %>%
+      step_range(all_numeric_predictors(), min = 0, max = 1)
+    
+    prep_smote <- prep(smote_recipe, training = train_raw)
+    train_baked <- bake(prep_smote, new_data = NULL)
+    
+    # Save
+    fname <- sprintf("train_smote_ratio_%.2f.rds", ratio)
+    saveRDS(process_for_keras(train_baked), file.path(train_output_dir, fname))
+    
+    cat(sprintf("   > Saved SMOTE Ratio %.2f (Rows: %d)\n", ratio, nrow(train_baked)))
+    
+  }, error = function(e) {
+    cat(sprintf("   > Error generating SMOTE %.2f: %s\n", ratio, e$message))
+  })
+}
+
+# ==============================================================================
+# Module 6 & 7: 100-Iteration Synchronous Optimization Loop
+# ==============================================================================
+# LOGIC: 
+# We perform a Grid Search across two dimensions:
+# 1. SMOTE Ratio (10 levels)
+# 2. Class Weight (10 levels)
+# Total = 100 combinations.
+
+cat("\n================================================================\n")
+cat(" MODULE 6 & 7: HYBRID SYNCHRONOUS OPTIMIZATION LOOP\n")
+cat("================================================================\n")
+
+library(reticulate)
+
+# --- Load Static Data ---
+val_data   <- readRDS(file.path(output_dir, "val_tensor.rds"))
+val_x_np   <- np_array(val_data$x, dtype = "float32")
+val_y_np   <- np_array(val_data$y, dtype = "float32")
+input_dim  <- ncol(val_data$x)
+
+# --- Define Grid Dimensions ---
+smote_grid_vals <- seq(0.1, 1.0, length.out = 10)
+weight_grid_vals <- seq(1.0, 10.0, length.out = 10) # Weights from 1 (Neutral) to 10 (Heavy)
+
+# Create the master grid of 100 iterations
+hybrid_grid <- expand.grid(
+  Smote_Ratio = smote_grid_vals,
+  Class_Weight = weight_grid_vals
+)
+hybrid_grid$Iter_ID <- 1:nrow(hybrid_grid)
+
+# --- Metric Helper ---
+calculate_comprehensive_metrics <- function(y_true, y_pred_prob, threshold = 0.5) {
+  y_true <- as.numeric(as.vector(y_true))
+  y_pred_prob <- as.numeric(as.vector(y_pred_prob))
+  y_pred_class <- ifelse(y_pred_prob >= threshold, 1, 0)
+  
+  cm <- table(factor(y_true, levels=c(0,1)), factor(y_pred_class, levels=c(0,1)))
+  TN <- as.numeric(cm[1,1]); FP <- as.numeric(cm[1,2])
+  FN <- as.numeric(cm[2,1]); TP <- as.numeric(cm[2,2])
+  
+  Accuracy <- (TP + TN) / (TP + TN + FP + FN)
+  Recall <- ifelse((TP + FN) == 0, 0, TP / (TP + FN))
+  Specificity <- ifelse((TN + FP) == 0, 0, TN / (TN + FP))
+  Balanced_Acc <- (Recall + Specificity) / 2
+  
+  numerator <- (TP * TN) - (FP * FN)
+  denominator <- sqrt((TP + FP) * (TP + FN) * (TN + FP) * (TN + FN))
+  MCC <- ifelse(denominator == 0, 0, numerator / denominator)
+  
+  return(list(MCC=MCC, Balanced_Acc=Balanced_Acc))
+}
+
+# --- Model Builder (Slightly higher dropout for hybrid noise) ---
+build_model <- function(input_shape) {
+  inputs <- layer_input(shape = c(input_shape))
+  predictions <- inputs %>%
+    layer_dense(units = 128) %>%
+    layer_batch_normalization() %>%
+    layer_activation("relu") %>%
+    layer_dropout(rate = 0.5) %>% # Increased dropout
+    layer_dense(units = 64) %>%
+    layer_activation("relu") %>%
+    layer_dropout(rate = 0.4) %>%
+    layer_dense(units = 1, activation = "sigmoid")
+  
+  model <- keras_model(inputs = inputs, outputs = predictions)
+  model$compile(loss = "binary_crossentropy", optimizer = optimizer_adam(learning_rate = 0.001), metrics = list("AUC"))
+  return(model)
+}
+
+# --- Loop Execution ---
+results_df <- data.frame()
+cb <- list(callback_early_stopping(monitor = "val_loss", patience = 4, restore_best_weights = TRUE, verbose = 0))
+
+cat(sprintf("\nStarting 100 Synchronous Iterations...\n"))
+
+# Cache for loaded datasets to avoid disk I/O on every loop (if RAM permits)
+# Since we have only 10 files, we can load them into a list once.
+smote_cache <- list()
+cat(">> Pre-loading SMOTE datasets into memory for efficiency...\n")
+for(r in smote_grid_vals) {
+  fname <- sprintf("train_smote_ratio_%.2f.rds", r)
+  fpath <- file.path(train_output_dir, fname)
+  if(file.exists(fpath)) {
+    raw <- readRDS(fpath)
+    smote_cache[[as.character(r)]] <- list(
+      x = np_array(raw$x, dtype="float32"),
+      y = np_array(raw$y, dtype="float32")
+    )
+  }
+}
+
+for (i in 1:nrow(hybrid_grid)) {
+  
+  current_smote <- hybrid_grid$Smote_Ratio[i]
+  current_weight <- hybrid_grid$Class_Weight[i]
+  
+  # 1. Retrieve Data from Cache
+  data_bundle <- smote_cache[[as.character(current_smote)]]
+  
+  # 2. Build Model
+  model <- build_model(input_dim)
+  
+  # 3. Train (Synchronous: SMOTE Data + Weight Penalty)
+  history <- model$fit(
+    x = data_bundle$x, y = data_bundle$y,
+    epochs = 20L, batch_size = 512L,
+    validation_data = list(val_x_np, val_y_np),
+    class_weight = list("0" = 1.0, "1" = current_weight), # Dynamic Weight
+    callbacks = cb, verbose = 0L
+  )
+  
+  # 4. Evaluate
+  probs <- model$predict(val_x_np, verbose = 0L)
+  
+  # Fast Threshold Scan
+  best_mcc <- -1
+  best_thresh <- 0.5
+  for(t in seq(0.1, 0.9, by=0.1)) {
+    m <- calculate_comprehensive_metrics(val_data$y, probs, threshold = t)$MCC
+    if(m > best_mcc) { best_mcc <- m; best_thresh <- t }
+  }
+  
+  results_df <- rbind(results_df, data.frame(
+    Iter = i,
+    Smote = current_smote,
+    Weight = current_weight,
+    MCC = best_mcc,
+    Threshold = best_thresh
+  ))
+  
+  if(i %% 10 == 0) {
+    cat(sprintf("[%d/100] Smote:%.1f | Weight:%.1f | MCC:%.4f\n", 
+                i, current_smote, current_weight, best_mcc))
+  }
+  
+  rm(model, history, probs)
+  gc(verbose=FALSE)
+}
+
+write.csv(results_df, file.path(output_dir, "hybrid_optimization_log.csv"), row.names = FALSE)
+
+# ==============================================================================
+# Module 8: Final Model Selection & Export
+# ==============================================================================
+cat("\n================================================================\n")
+cat(" MODULE 8: CHAMPION SELECTION & EXPORT\n")
+cat("================================================================\n")
+
+# 1. Select Winner
+winner <- results_df %>% arrange(desc(MCC)) %>% slice(1)
+cat(">> CHAMPION COMBINATION FOUND:\n")
+cat(sprintf("   SMOTE Ratio:  %.2f\n", winner$Smote))
+cat(sprintf("   Class Weight: %.2f\n", winner$Weight))
+cat(sprintf("   Validation MCC: %.4f (at threshold %.2f)\n", winner$MCC, winner$Threshold))
+
+# 2. Train Final Model
+final_data <- smote_cache[[as.character(winner$Smote)]]
+
+final_model <- build_model(input_dim)
+final_model$fit(
+  x = final_data$x, y = final_data$y,
+  epochs = 40L, batch_size = 512L,
+  validation_data = list(val_x_np, val_y_np),
+  class_weight = list("0" = 1.0, "1" = winner$Weight),
+  callbacks = cb, verbose = 0L
+)
+
+# 3. Final Test
+test_data  <- readRDS(file.path(output_dir, "test_tensor.rds"))
+test_x_np <- np_array(test_data$x, dtype = "float32")
+test_probs <- final_model$predict(test_x_np, verbose = 0L)
+test_metrics <- calculate_comprehensive_metrics(test_data$y, test_probs, threshold = winner$Threshold)
+
+cat("\n--- FINAL TEST SET PERFORMANCE ---\n")
+cat(sprintf("MCC:          %.4f\n", test_metrics$MCC))
+cat(sprintf("Balanced Acc: %.4f\n", test_metrics$Balanced_Acc))
+
+final_model$save(file.path(output_dir, "best_model_hybrid_final.keras"))
+cat("\n>> COMPLETE. Model saved.\n")

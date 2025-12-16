@@ -2,6 +2,11 @@
 # REPORT VERSION 6: FINAL RISK-AWARE NEURAL NETWORK (SAMPLE WEIGHTED)
 # FILENAME: RiskProfile_Final_Sample_Weighting.R
 # ==============================================================================
+# This script implements a risk-aware neural network for tabular credit data.
+# Key idea: we prioritize learning hard, high-risk pockets by using per-row sample weights
+# derived from domain-driven "risk profile" flags (instead of only global class weights).
+# Since the assignment focuses on behavior prediction (not accept/reject decisions),
+# we emphasize threshold-independent metrics (ROC-AUC, PR-AUC) plus stable training curves.
 
 # ------------------------------------------------------------------------------
 # CONTEXT AND OBJECTIVE
@@ -113,6 +118,10 @@ if (backend_configured && reticulate::py_module_available("tensorflow")) {
 # ------------------------------------------------------------------------------
 # Section 1.5: Data Loading
 # ------------------------------------------------------------------------------
+# Defensive loader:
+# Stop early if the file path is wrong to prevent downstream errors and confusing partial outputs.
+
+
 load_data <- function(path) {
   if(!file.exists(path)) stop(paste("File not found at:", path))
   df <- read.csv(path, stringsAsFactors = FALSE)
@@ -125,6 +134,7 @@ load_data <- function(path) {
 
 # --- Execute Data Loading ---
 df <- load_data("C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_data/Dataset-part-2.csv")
+df <- load_data("DS-Project_data/Dataset-part-2.csv")
 
 
 # ==============================================================================
@@ -136,6 +146,8 @@ df <- load_data("C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Proj
 # Section 2.1: Setup PDF Output
 # ------------------------------------------------------------------------------
 plot_output_dir <- "C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_Part2_Scripts/Saved_Outputs"
+plot_output_dir <- "DS-Project_Part2_Scripts/Saved_Outputs"
+
 if(!dir.exists(plot_output_dir)) dir.create(plot_output_dir, recursive = TRUE)
 
 pdf(file = file.path(plot_output_dir, "All_Project_Visualizations_Weights.pdf"), width = 11, height = 8.5)
@@ -148,6 +160,9 @@ cat("================================================================\n")
 # ------------------------------------------------------------------------------
 # Section 2.2: Structure & Content Inspection
 # ------------------------------------------------------------------------------
+# Quick schema check: confirms data types, categorical fields, and whether IDs/targets are present.
+# This prevents modeling mistakes (e.g., treating IDs as numeric predictors).
+
 cat("\n[Phase 1] Structure & Content Inspection\n")
 print(dim(df))
 dplyr::glimpse(df)
@@ -156,6 +171,11 @@ dplyr::glimpse(df)
 # Section 2.3: Data Quality Checks
 # ------------------------------------------------------------------------------
 cat("\n[Phase 2] Data Quality Checks\n")
+# Data quality checks:
+# - Missingness: neural nets cannot handle NA values; we must decide imputation strategy.
+# - Duplicates: duplicates can inflate performance estimates and bias distributions.
+# - Zero variance: constant predictors add no information and can be removed safely.
+
 
 # 1. Statistical Summary
 print(summary(dplyr::select(df, where(is.numeric))))
@@ -178,6 +198,10 @@ if("FLAG_MOBIL" %in% names(df)) {
 # ------------------------------------------------------------------------------
 # Section 2.4: Univariate Visualization
 # ------------------------------------------------------------------------------
+# EDA interpretation:
+# The raw status distribution is imbalanced. A naive model could achieve high accuracy
+# by predicting the majority class only, so later stages must be cost-sensitive
+# (class weights and/or sample weights) and we must monitor PR-AUC as well as ROC-AUC.
 
 # 1. Target Variable Distribution
 if("status" %in% names(df)) {
@@ -229,6 +253,9 @@ if("AMT_INCOME_TOTAL" %in% names(df)) {
 # ------------------------------------------------------------------------------
 # CRITICAL FINDING: 'DAYS_EMPLOYED' contains 365243 (~1000 years), indicating "Pensioner".
 cat("\n[Module 2] Handling Anomalies and Engineering Features\n")
+# Sentinel anomaly:
+# DAYS_EMPLOYED == 365243 is a legacy placeholder (~1000 years) and not a real numeric value.
+# If left untreated it would break scaling and distort gradients, so we replace it and preserve meaning via a flag.
 
 if("DAYS_EMPLOYED" %in% names(df) && "NAME_INCOME_TYPE" %in% names(df)) {
   anomaly_check <- df %>%
@@ -249,6 +276,9 @@ if("DAYS_EMPLOYED" %in% names(df) && "NAME_INCOME_TYPE" %in% names(df)) {
 # Logic Check: Do 100% of Pensioners have missing occupation?
 if("OCCUPATION_TYPE" %in% names(df) && "NAME_INCOME_TYPE" %in% names(df)) {
   cat("\n[Analysis Verification] MNAR Check: Occupation Missingness vs. Income Type\n")
+  # MNAR missingness:
+  # Missing OCCUPATION_TYPE is not random; it correlates with income type (e.g., pensioners).
+  # Therefore we use structured imputation ("Retired"/"Unknown") rather than dropping rows.
   
   mnar_check <- df %>%
     mutate(OCCUPATION_TYPE = ifelse(OCCUPATION_TYPE == "", NA, OCCUPATION_TYPE)) %>%
@@ -324,6 +354,9 @@ df_clean <- df
 # This captures 30+ Days Past Due (DPD) as a risk event.
 if ("status" %in% names(df_clean)) {
   cat("Constructing Target Variable (Recovering Bad Instances)...\n")
+  # Target engineering:
+  # We convert the raw vintage status codes into a binary outcome TARGET (0=good, 1=bad).
+  # This creates a supervised learning label suitable for binary cross-entropy training.
   
   df_clean <- df_clean %>%
     mutate(
@@ -372,6 +405,8 @@ cat(">> QA PASS: All Flags standardized to binary integers.\n")
 # ------------------------------------------------------------------------------
 if ("DAYS_EMPLOYED" %in% names(df_clean)) {
   cat("Rectifying 'DAYS_EMPLOYED': Creating Status Flag & Cleaning...\n")
+  # Preserve domain meaning:
+  # We keep the information "not working/pensioner" as a categorical flag while removing the numeric sentinel distortion.
   
   df_clean <- df_clean %>%
     mutate(
@@ -392,6 +427,9 @@ if ("DAYS_EMPLOYED" %in% names(df_clean)) {
 if("IS_PENSIONER" %in% names(df_clean)) {
   df_clean <- df_clean %>% select(-IS_PENSIONER)
 }
+# Structured imputation:
+# Pensioners with missing occupation are labeled "Retired" (informative missingness),
+# other missing occupations are labeled "Unknown" to avoid information loss.
 
 # 2. Impute Occupation Type based on Pensioner Logic
 if("OCCUPATION_TYPE" %in% names(df_clean) && "NAME_INCOME_TYPE" %in% names(df_clean)) {
@@ -411,6 +449,9 @@ if("OCCUPATION_TYPE" %in% names(df_clean) && "NAME_INCOME_TYPE" %in% names(df_cl
 if("NAME_EDUCATION_TYPE" %in% names(df_clean)) {
   edu_levels <- c("Lower secondary", "Secondary / secondary special", 
                   "Incomplete higher", "Higher education", "Academic degree")
+  # Ordinal encoding:
+  # Education has a natural rank order. We encode it as an ordered integer to preserve monotonic information
+  # and reduce dimensionality compared to one-hot encoding.
   
   df_clean <- df_clean %>%
     mutate(
@@ -470,6 +511,9 @@ dplyr::glimpse(df_clean)
 # Section 4.2: Data Quality & Sanity Assurance
 # ------------------------------------------------------------------------------
 cat("\n[Section 4.2] Data Quality Checks\n")
+# Post-cleaning validation:
+# We verify that missing values are resolved and that features are now safe for matrix operations in neural nets.
+
 print(summary(dplyr::select_if(df_clean, is.numeric)))
 
 # Missingness Map (Should be blank)
@@ -514,6 +558,9 @@ for(col in num_cols) {
 # Section 4.5: Correlations & Structural Missingness
 # ------------------------------------------------------------------------------
 # Correlation Matrix
+# Multicollinearity check:
+# Highly correlated predictors can introduce redundancy; removing obvious duplicates can improve convergence and stability.
+
 num_df <- dplyr::select_if(df_clean, is.numeric)
 if(ncol(num_df) > 1) {
   cor_mat <- cor(num_df, use = "pairwise.complete.obs")
@@ -618,6 +665,10 @@ cat("================================================================\n")
 # --- Step 1: Logistic Regression for Independent Risk Drivers ---
 # We use a Generalized Linear Model (GLM) to isolate effects.
 # Equation: $log(\frac{p}{1-p}) = \beta_0 + \beta_1X_1 + ... + \beta_nX_n$
+# Interpretability (linear baseline):
+# Logistic regression provides global, ceteris-paribus effects (odds ratios) for human interpretability.
+# Note: With many categorical levels, coefficients may be unstable; we use it as directional insight, not as the final model.
+
 
 if("TARGET" %in% names(df_clean)) {
   cat("\n[Analysis 1] Independent Risk Drivers (Logistic Regression)...\n")
@@ -664,6 +715,10 @@ cat("\n[Analysis 2] High-Risk Profile Segmentation (Decision Tree Rules)...\n")
 # 1. Added 'parms = list(prior = c(0.5, 0.5))' to force the tree to treat Bad/Good 
 #    classes as equally important, overcoming the 11% imbalance.
 # 2. Lowered 'cp' to 0.001 to detect subtler risk patterns.
+# Interpretability (interaction mining):
+# A decision tree acts as a "white-box" proxy to discover high-risk interaction pockets.
+# These pockets guide the engineered RISK_P* flags later used for surgical sample weighting.
+
 tree_model <- rpart(TARGET ~ ., data = df_clean, method = "class", 
                     parms = list(prior = c(0.5, 0.5)),
                     control = rpart.control(cp = 0.001, minbucket = 30))
@@ -744,6 +799,10 @@ top_risk_nodes <- risk_profiles %>%
 cat(sprintf("Extracting rules for the top %d high-risk segments...\n\n", nrow(top_risk_nodes)))
 
 # 2. Extract Logic Paths (The "DNA" of the Profile)
+# Business-rule extraction:
+# We convert the tree's leaf-node paths into readable rules to justify targeted weighting (risk pockets)
+# and to document non-linear interactions for the report.
+
 if(nrow(top_risk_nodes) > 0) {
   node_ids <- top_risk_nodes$Leaf_Node
   rules_list <- path.rpart(tree_model, nodes = node_ids, pretty = 0, print.it = FALSE)
@@ -906,6 +965,8 @@ dev.off()
 cat(">> PDF Graphics Device Closed. Visualization file saved.\n")
 
 data_output_dir <- "C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_Part2_Scripts/Saved_Outputs"
+data_output_dir <- "/Users/francescamorici/RstudioProjects/GRP-6_DS-Project/DS-Project_Part2_Scripts/"
+
 if(!dir.exists(data_output_dir)) dir.create(data_output_dir, recursive = TRUE)
 clean_data_path <- file.path(data_output_dir, "Final_Cleaned_Dataset.csv")
 write.csv(df_clean, file = clean_data_path, row.names = FALSE)
@@ -941,6 +1002,10 @@ cat("Split Complete. Training Size:", nrow(train_raw), "\n")
 # Diluting the weighting across too many weak profiles hurts performance.
 
 # Define "Toxic" Job Cluster based on Tree Output
+# Risk pocket definition:
+# toxic_jobs clusters occupations frequently associated with high default rates in the tree/EDA.
+# We use this to build RISK_P flags (binary indicators) capturing known high-risk combinations.
+
 toxic_jobs <- c("Laborers", "Sales staff", "Drivers", "Cooking staff", 
                 "Security staff", "Waiters/barmen staff", "Low-skill Laborers")
 
@@ -953,6 +1018,10 @@ base_recipe <- recipe(TARGET ~ ., data = train_raw) %>%
   step_unknown(all_nominal_predictors()) %>%
   
   # 2. Risk Interaction Engineering (Only the Strongest Signals)
+  # Risk-flag feature engineering:
+  # Each RISK_P* flag captures a specific high-risk interaction (age x occupation x liabilities/housing).
+  # These flags are included as model features AND used later to amplify loss via sample weights.
+  
   step_mutate(
     
     # Profile 1: Young Professionals with Liabilities (Car, No Kids)
@@ -1017,6 +1086,7 @@ test_keras  <- process_matrix_with_flags(test_processed)
 # --- CRITICAL FIX: Ensure Directory Exists ---
 # We redefine the output path here to guarantee safety
 output_dir <- "C:/Users/John Arellano/RstudioProjects/GRP-6_DS-Project/DS-Project_Part2_Scripts/Saved_Outputs/Risk_Profile_Pre_NN_Script_Weighting_50_Iterations"
+output_dir <- "/Users/francescamorici/RstudioProjects/GRP-6_DS-Project/DS-Project_Part2_Scripts/Saved_Outputs/Risk_Profile_Pre_NN_Script_Weighting_50_Iterations"
 
 if(!dir.exists(output_dir)) {
   cat(">> Creating directory:", output_dir, "\n")
@@ -1065,6 +1135,12 @@ test_x_np  <- np_array(test_data$x, dtype = "float32")
 # High Risk Profile Multiplier: (Tuned to be searched in Module 7)
 
 # We wrap the weight calculation in a function for Module 7's search
+# Sample weighting strategy:
+# Base weights address class imbalance (default cases receive higher weight).
+# Risk multipliers amplify known "hard" pockets to force the NN to learn non-linear patterns
+# that are underrepresented or easily ignored by standard training.
+# We normalize weights so the average weight remains 1, stabilizing the effective learning rate.
+
 calculate_weights <- function(base_multiplier) {
   y_train_vec <- train_data$y
   # 1. Base Class Weight Vector (5x for the minority class)
@@ -1164,6 +1240,10 @@ cb_tuning <- list(callback_early_stopping(monitor = "val_loss", patience = 50,
                                           restore_best_weights = TRUE, verbose = 0))
 
 # Combined Hyperparameter Grid Search: Network size AND Risk Multiplier
+# Hyperparameter tuning:
+# We jointly tune model capacity (Units), optimization (learning rate), and risk multiplier strength.
+# Goal: maximize a robust imbalance-aware metric (MCC) while preserving ranking performance (AUC).
+
 hyper_grid <- expand.grid(
   Units_L1 = c(64, 128, 256),
   Dropout  = c(0.2),
@@ -1272,6 +1352,10 @@ long_cb <- list(callback_early_stopping(monitor = "val_loss", patience = 500, # 
                                         restore_best_weights = TRUE, verbose = 1))
 
 # Assign the training process OUTPUT (the history object) to final_history
+# Final training:
+# Retrain the champion configuration with long training and early stopping.
+# This aims for stable convergence rather than quick fitting, consistent with the "long training" strategy.
+
 final_history <- final_model$fit(
   x = train_x_np, 
   y = train_y_np, 
@@ -1324,6 +1408,10 @@ cat("\n>> COMPLETE. Final Model saved to output directory.\n")
 cat("\n================================================================\n")
 cat(" MODULE 9: VISUALIZATION & DIAGNOSTICS\n")
 cat("================================================================\n")
+# Diagnostics:
+# - Confusion matrix is shown at a chosen threshold for illustration of errors.
+# - ROC-AUC and PR-AUC assess ranking quality across thresholds (preferred for behavior prediction tasks).
+# - Learning curves validate training stability and detect overfitting.
 
 # ------------------------------------------------------------------------------
 # 1. Preparation: Data Structuring

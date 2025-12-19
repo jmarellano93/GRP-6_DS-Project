@@ -1,0 +1,4 @@
+{
+  "message": "object 'avg_val_f1' not found",
+  "traceback": ["eval(ei, envir)", "eval(ei, envir)", "training_run(\"/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_metric.r\")"]
+}

@@ -1,0 +1,177 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   flag_integer("units1", 128),
++   flag_integer("unit ..." ... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 7)
+
+> y_raw_factor <- as.factor(data[[target_col]])
+
+> # 3. Stratified Split Data ----------------------------------------------
+> set.seed(42)
+
+> test_idx <- createDataPartition(y_raw_factor, p = 0.15, list = FALSE)
+
+> x_test_raw <- x_all[test_idx, ]
+
+> y_test     <- y_all[test_idx, ]
+
+> x_remain <- x_all[-test_idx, ]
+
+> y_remain <- y_all[-test_idx, ]
+
+> y_remain_factor <- y_raw_factor[-test_idx]
+
+> val_p <- 0.15 / 0.85 
+
+> val_idx <- createDataPartition(y_remain_factor, p = val_p, list = FALSE)
+
+> x_val_raw   <- x_remain[val_idx, ]
+
+> y_val       <- y_remain[val_idx, ]
+
+> x_train_raw <- x_remain[-val_idx, ]
+
+> y_train     <- y_remain[-val_idx, ]
+
+> # --- 3.5 Calculate Class Weights ---
+> # We calculate these based on the TRAINING set only to avoid data leakage
+> train_counts <- table(y_remain_f .... [TRUNCATED] 
+
+> total_train <- sum(train_counts)
+
+> n_classes <- 7
+
+> # Inverse Frequency Formula: Total / (n_classes * class_count)
+> class_weights_list <- list()
+
+> for (i in 0:(n_classes - 1)) {
++   class_label <- as.character(i)
++   weight <- total_train / (n_classes * train_counts[class_label])
++   class_weig .... [TRUNCATED] 
+
+> # OPTIONAL: Manual Override (Uncomment if you want to force specific severity)
+> class_weights_list[["0"]] <- 2.5
+
+> class_weights_list[["1"]] <- 1.0 
+
+> class_weights_list[["2"]] <- 15.0 
+
+> class_weights_list[["3"]] <- 30.0
+
+> class_weights_list[["4"]] <- 50.0 
+
+> class_weights_list[["5"]] <- 100.0 
+
+> class_weights_list[["6"]] <- 50.0
+
+> cat("Calculated Class Weights:\n")
+Calculated Class Weights:
+
+> print(unlist(class_weights_list))
+    0     1     2     3     4     5     6 
+  2.5   1.0  15.0  30.0  50.0 100.0  50.0 
+
+> # 4. Preprocessing (Robust Scaling) --------------------------------------
+> all_cols <- colnames(x_train_raw)
+
+> binary_cols <- all_cols[apply(x_train_raw, 2, function(x) all(x %in% c(0, 1)))]
+
+> continuous_cols <- setdiff(all_cols, binary_cols)
+
+> scaler <- preProcess(x_train_raw[, continuous_cols], method = c("zv", "center", "scale"))
+
+> x_train <- x_train_raw
+
+> x_val   <- x_val_raw
+
+> x_test  <- x_test_raw
+
+> x_train[, continuous_cols] <- predict(scaler, x_train_raw[, continuous_cols])
+
+> x_val[, continuous_cols]   <- predict(scaler, x_val_raw[, continuous_cols])
+
+> x_test[, continuous_cols]  <- predict(scaler, x_test_raw[, continuous_cols])
+
+> # 5. Define Model --------------------------------------------------------
+> model <- keras_model_sequential() %>%
++   layer_dense(units = FLAGS$uni .... [TRUNCATED] 
+
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, activation = 'relu') %>%
++     layer_dropout(rate = FLAGS$dro .... [TRUNCATED] 
+
+> model <- model %>% layer_dense(units = 7, activation = 'softmax')
+
+> # 6. Compile & Train -----------------------------------------------------
+> model %>% compile(
++   loss = 'categorical_crossentropy',
++   optimizer .... [TRUNCATED] 
+
+> # --- DIAGNOSTIC CALLBACK ---
+> callback_weightnorm_f1 <- callback_lambda(
++   on_epoch_end = function(epoch, logs) {
++     if (epoch %% 50 == 0) {
+ .... [TRUNCATED] 
+
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epochs, # Use the flag instead of hardcoded 5000          
++   batch_size = FLAGS .... [TRUNCATED] 
+
+EPOCH 51: Norm: 29.71 | Macro F1: 0.2854 | Bal Acc: 0.7014
+
+EPOCH 101: Norm: 34.53 | Macro F1: 0.3432 | Bal Acc: 0.7405
+
+EPOCH 151: Norm: 37.59 | Macro F1: 0.3281 | Bal Acc: 0.7379
+
+EPOCH 201: Norm: 39.63 | Macro F1: 0.3425 | Bal Acc: 0.7500
+
+EPOCH 251: Norm: 41.01 | Macro F1: 0.3488 | Bal Acc: 0.7453
+
+EPOCH 301: Norm: 42.03 | Macro F1: 0.3411 | Bal Acc: 0.7431
+
+EPOCH 351: Norm: 42.84 | Macro F1: 0.3640 | Bal Acc: 0.7511
+
+EPOCH 401: Norm: 43.52 | Macro F1: 0.3633 | Bal Acc: 0.7503
+
+EPOCH 451: Norm: 44.06 | Macro F1: 0.3872 | Bal Acc: 0.7374
+
+EPOCH 501: Norm: 44.53 | Macro F1: 0.3615 | Bal Acc: 0.7330
+
+EPOCH 551: Norm: 44.93 | Macro F1: 0.3699 | Bal Acc: 0.7438
+
+EPOCH 601: Norm: 45.27 | Macro F1: 0.3780 | Bal Acc: 0.7379
+
+EPOCH 651: Norm: 45.62 | Macro F1: 0.3936 | Bal Acc: 0.7457
+
+EPOCH 701: Norm: 45.97 | Macro F1: 0.3833 | Bal Acc: 0.7504
+
+EPOCH 751: Norm: 46.26 | Macro F1: 0.3956 | Bal Acc: 0.7419
+
+EPOCH 801: Norm: 46.55 | Macro F1: 0.4015 | Bal Acc: 0.7485
+
+EPOCH 851: Norm: 46.81 | Macro F1: 0.3985 | Bal Acc: 0.7395
+
+EPOCH 901: Norm: 47.00 | Macro F1: 0.3921 | Bal Acc: 0.7460
+
+EPOCH 951: Norm: 47.20 | Macro F1: 0.4093 | Bal Acc: 0.7437

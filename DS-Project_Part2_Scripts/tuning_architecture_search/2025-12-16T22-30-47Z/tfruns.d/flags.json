@@ -1,0 +1,12 @@
+{
+  "units1": 512,
+  "units2": 256,
+  "units3": 128,
+  "dropout1": 0,
+  "dropout2": 0,
+  "dropout3": 0,
+  "weight_decay": 0.01,
+  "learning_rate": 0.001,
+  "batch_size": 256,
+  "epochs": 600
+}

@@ -1,0 +1,77 @@
+
+> # ==============================================================================
+> # Assignment 2 MLP with Imbalance Handling
+> # - Adds SMOTE overs .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(smotefamily) 
+
+> library(magrittr)
+
+> # Helper: Force "Default value if null"
+> `%||%` <- function(x, y) if (is.null(x)) y else x
+
+> # ------------------------------------------------------------------------------
+> # 0. Custom Multiclass SMOTE Helper (Since UBL is unavailable)
+>  .... [TRUNCATED] 
+
+> # ------------------------------------------------------------------------------
+> # 1. Hyperparameter flags
+> # ----------------------------------- .... [TRUNCATED] 
+
+> # ------------------------------------------------------------------------------
+> # 2. Load & Prepare Data
+> # ------------------------------------ .... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.data.frame()
+
+> y_all_vec <- data[[target_col]] 
+
+> y_all_cat <- to_categorical(y_all_vec, num_classes = 8)
+
+> # ------------------------------------------------------------------------------
+> # 3. Split Data
+> # --------------------------------------------- .... [TRUNCATED] 
+
+> n_rows <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, , drop = FALSE]
+
+> y_test_holdout     <- y_all_cat[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, , drop = FALSE]
+
+> y_cv_vec <- y_all_vec[-test_idx] 
+
+> y_cv     <- y_all_cat[-test_idx, ]
+
+> # ------------------------------------------------------------------------------
+> # 4. Cross-Validation Setup
+> # --------------------------------- .... [TRUNCATED] 
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> results <- data.frame(
++   Fold = integer(k),
++   Train_Loss = numeric(k), Val_Loss = numeric(k),
++   Train_Acc = numeric(k), Val_Acc = numeric(k),
+ .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold CV with SMOTE (smotefamily) + class weights...\n")
+Starting 5 -Fold CV with SMOTE (smotefamily) + class weights...
+
+> # ------------------------------------------------------------------------------
+> # 5. Training Loop
+> # ------------------------------------------ .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---
+   Applying Multiclass SMOTE...

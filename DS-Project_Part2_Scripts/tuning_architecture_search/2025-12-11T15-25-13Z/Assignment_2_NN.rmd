@@ -1,0 +1,238 @@
+---
+title: "Neural_Network"
+output: html_document
+date: "2025-12-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Set personal working directory
+setwd("~/Documents/Repos/GRP-6_DS-Project")
+renv::activate()
+```
+
+```{r safe-caffeinate, echo=FALSE}
+# SAFE WAKE LOCK
+# 1. -i : Prevents System Sleep (CPU stays on), but allows Screen Sleep.
+# 2. -w : Waits for the current R Process ID (Sys.getpid()).
+# 3. Result: When this R session ends (or crashes), the wake lock dies automatically.
+system(paste("caffeinate -i -w", Sys.getpid(), "&"), wait = FALSE)
+```
+## Type of Network
+The dataset is tabular data with numerical features and a categorical target variable. A feedforward neural network is the most suitable type of network for this classification task.
+
+A convolutional neural network (CNN) is typically used for image data, while a recurrent neural network (RNN) is more suited for sequential data such as time series or text. Since our data does not have spatial or sequential characteristics, a feedforward neural network is the best choice.
+
+```{r libraries}
+library(tfruns)
+library(tictoc)
+library(beepr)
+```
+
+## Changed metric
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_metric.r")
+beep(sound=5)
+toc()
+```
+
+## Oversample
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_oversample.r")
+beep(sound=5)
+toc()
+```
+
+## SMOTE
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_SMOTE.r")
+beep(sound=5)
+toc()
+```
+
+## Moderate Weight 
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_moderate_weight.r")
+beep(sound=5)
+toc()
+```
+
+## Focal Loss
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_focal_loss.r")
+beep(sound=5)
+toc()
+```
+
+## SMOTE + Class weight
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_SMOTE_weight.r")
+beep(sound=5)
+toc()
+```
+
+
+
+
+# --- Architecture Search ---
+# Goal: Find the balance between Model Size (Units) and Overfitting (Dropout)
+```{r}
+runs_grid <- list(
+  # --- VARY THESE (Architecture) ---
+  
+  # 1. Width (Number of Neurons)
+  # Testing a "Narrow" vs "Wide" first layer
+  units1 = c(128, 256),
+  
+  # Testing tapering down in the second layer
+  units2 = c(64, 128),
+  
+  # 2. Depth (Number of Layers)
+  # 0 = 2-Layer Model (The logic in your script handles this)
+  # 64/128 = 3-Layer Model
+  units3 = c(0, 64),
+  
+  # --- KEEP THESE CONSTANT (Controls) ---
+  
+  # Fix dropout to a baseline (e.g., 0) so we compare architectures fairly
+  dropout1 = c(0),
+  dropout2 = c(0), 
+  dropout3 = c(0),
+  
+  # Fix optimization dynamics
+  learning_rate = c(0.001), 
+  batch_size = c(128)
+)
+```
+
+
+# Execute the Tuning Run
+```{r}
+tic()
+tuning_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_metric.r", 
+           runs_dir = "tuning_architecture_search", 
+           flags = runs_grid, 
+           sample = 1.0, # Run ALL combinations (set to e.g. 0.5 to run random 50%)
+           echo = FALSE)
+
+beep(sound=5)
+toc()
+```
+
+
+# --- View Results ---
+# List top 5 models sorted by Validation Accuracy
+```{r}
+# Retrieve runs, ordered by lowest Validation Loss first
+results <- ls_runs(runs_dir = "tuning_architecture_search", 
+                   order = metric_val_loss, 
+                   decreasing = FALSE) # FALSE because lower loss is better
+
+# Display the winning hyperparameters
+# I added flag_units3 since you are testing depth now as well
+head(results[, c("flag_units1", "flag_units2", "flag_units3", 
+                 "metric_val_loss", "metric_val_accuracy")], 5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Execute the Tuning Run
+```{r}
+tic()
+tuning_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_SMOTE.r", 
+           runs_dir = "tuning_architecture_search", 
+           flags = runs_grid, 
+           sample = 1.0, # Run ALL combinations (set to e.g. 0.5 to run random 50%)
+           echo = FALSE)
+
+beep(sound=5)
+toc()
+```
+
+
+# --- View Results ---
+# List top 5 models sorted by Validation Accuracy
+```{r}
+# Retrieve runs, ordered by lowest Validation Loss first
+results <- ls_runs(runs_dir = "tuning_architecture_search", 
+                   order = metric_val_loss, 
+                   decreasing = FALSE) # FALSE because lower loss is better
+
+# Display the winning hyperparameters
+# I added flag_units3 since you are testing depth now as well
+head(results[, c("flag_units1", "flag_units2", "flag_units3", 
+                 "metric_val_loss", "metric_val_accuracy")], 5)
+```
+
+# Execute the Tuning Run
+```{r}
+tic()
+tuning_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_Moderate_weight.r", 
+           runs_dir = "tuning_architecture_search", 
+           flags = runs_grid, 
+           sample = 1.0, # Run ALL combinations (set to e.g. 0.5 to run random 50%)
+           echo = FALSE)
+
+beep(sound=5)
+toc()
+```
+
+
+# --- View Results ---
+# List top 5 models sorted by Validation Accuracy
+```{r}
+# Retrieve runs, ordered by lowest Validation Loss first
+results <- ls_runs(runs_dir = "tuning_architecture_search", 
+                   order = metric_val_loss, 
+                   decreasing = FALSE) # FALSE because lower loss is better
+
+# Display the winning hyperparameters
+# I added flag_units3 since you are testing depth now as well
+head(results[, c("flag_units1", "flag_units2", "flag_units3", 
+                 "metric_val_loss", "metric_val_accuracy")], 5)
+```
+
+
+
+
+
+
+
+
+
+

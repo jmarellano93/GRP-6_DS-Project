@@ -1,0 +1,103 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # --- Architecture ---
++   flag_integer("units1", 5 .... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> cat_col <- "OCCUPATION_TYPE_INT" # Ensure this matches your preprocessed name
+
+> # 3. Stratified Split Data -----------------------------------------------
+> set.seed(42)
+
+> y_raw_factor <- as.factor(data[[target_col]])
+
+> train_idx <- createDataPartition(y_raw_factor, p = 0.70, list = FALSE)
+
+> # Initial Split
+> train_data <- data[train_idx, ]
+
+> temp_data  <- data[-train_idx, ]
+
+> # Split remaining 30% into Val (15%) and Test (15%)
+> val_idx <- createDataPartition(temp_data[[target_col]], p = 0.5, list = FALSE)
+
+> val_data  <- temp_data[val_idx, ]
+
+> test_data <- temp_data[-val_idx, ]
+
+> # 4. Separate & Preprocess Inputs ----------------------------------------
+> 
+> # Define which columns are numeric/boolean (non-categorical, non-tar .... [TRUNCATED] 
+
+> # Scaling only the numeric part
+> scaler <- preProcess(train_data[, num_cols], method = c("zv", "center", "scale"))
+
+> prepare_inputs <- function(df) {
++   list(
++     # Input 1: Scaled numeric/boolean matrix
++     as.matrix(predict(scaler, df[, num_cols])),
++     #  .... [TRUNCATED] 
+
+> x_train <- prepare_inputs(train_data)
+
+> x_val   <- prepare_inputs(val_data)
+
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 7)
+
+> y_val   <- to_categorical(val_data[[target_col]], num_classes = 7)
+
+> # 5. Define Functional Model ---------------------------------------------
+> 
+> # Input A: Numeric/Boolean
+> input_num <- layer_input(shape = ncol(x .... [TRUNCATED] 
+
+> # Input B: Occupation (Embeddings)
+> input_cat <- layer_input(shape = 1, name = "categorical_input")
+
+> emb_layer <- input_cat %>% 
++   layer_embedding(input_dim = 18, output_dim = FLAGS$emb_size) %>% 
++   layer_flatten()
+
+> # Merge branches
+> merged <- layer_concatenate(list(input_num, emb_layer))
+
+> # Hidden Layers
+> main_path <- merged %>%
++   layer_dense(units = FLAGS$units1, activation = "relu") %>%
++   layer_dropout(rate = FLAGS$dropout1) %> .... [TRUNCATED] 
+
+> if (FLAGS$units3 > 0) {
++   main_path <- main_path %>%
++     layer_dense(units = FLAGS$units3, activation = "relu") %>%
++     layer_dropout(rate = F .... [TRUNCATED] 
+
+> # Output
+> output <- main_path %>% layer_dense(units = 7, activation = "softmax")
+
+> model <- keras_model(inputs = list(input_num, input_cat), outputs = output)
+
+> # 6. Compile & Train -----------------------------------------------------
+> model %>% compile(
++   loss = 'categorical_crossentropy',
++   optimizer .... [TRUNCATED] 
+
+> history <- model %>% fit(
++   x = x_train, y = y_train,
++   epochs = FLAGS$epochs,
++   batch_size = FLAGS$batch_size,
++   validation_data = list(x_v .... [TRUNCATED] 

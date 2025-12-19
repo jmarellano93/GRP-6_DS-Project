@@ -1,0 +1,208 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   flag_integer("units1", 128),
++   flag_integer("unit ..." ... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 7)
+
+> y_raw_factor <- as.factor(data[[target_col]])
+
+> # 3. Stratified Split Data ----------------------------------------------
+> set.seed(42)
+
+> test_idx <- createDataPartition(y_raw_factor, p = 0.15, list = FALSE)
+
+> x_test_raw <- x_all[test_idx, ]
+
+> y_test     <- y_all[test_idx, ]
+
+> x_remain <- x_all[-test_idx, ]
+
+> y_remain <- y_all[-test_idx, ]
+
+> y_remain_factor <- y_raw_factor[-test_idx]
+
+> val_p <- 0.15 / 0.85 
+
+> val_idx <- createDataPartition(y_remain_factor, p = val_p, list = FALSE)
+
+> x_val_raw   <- x_remain[val_idx, ]
+
+> y_val       <- y_remain[val_idx, ]
+
+> x_train_raw <- x_remain[-val_idx, ]
+
+> y_train     <- y_remain[-val_idx, ]
+
+> # --- 3.5 Calculate Class Weights ---
+> # We calculate these based on the TRAINING set only to avoid data leakage
+> train_counts <- table(y_remain_f .... [TRUNCATED] 
+
+> total_train <- sum(train_counts)
+
+> n_classes <- 7
+
+> # Inverse Frequency Formula: Total / (n_classes * class_count)
+> class_weights_list <- list()
+
+> for (i in 0:(n_classes - 1)) {
++   class_label <- as.character(i)
++   weight <- total_train / (n_classes * train_counts[class_label])
++   class_weig .... [TRUNCATED] 
+
+> # OPTIONAL: Manual Override (Uncomment if you want to force specific severity)
+> class_weights_list[["0"]] <- 1.0 
+
+> class_weights_list[["1"]] <- 1.0 
+
+> class_weights_list[["2"]] <- 5.0 
+
+> class_weights_list[["3"]] <- 10.0
+
+> class_weights_list[["4"]] <- 20.0 
+
+> class_weights_list[["5"]] <- 50.0 
+
+> class_weights_list[["6"]] <- 50.0
+
+> cat("Calculated Class Weights:\n")
+Calculated Class Weights:
+
+> print(unlist(class_weights_list))
+ 0  1  2  3  4  5  6 
+ 1  1  5 10 20 50 50 
+
+> # 4. Preprocessing (Robust Scaling) --------------------------------------
+> all_cols <- colnames(x_train_raw)
+
+> binary_cols <- all_cols[apply(x_train_raw, 2, function(x) all(x %in% c(0, 1)))]
+
+> continuous_cols <- setdiff(all_cols, binary_cols)
+
+> scaler <- preProcess(x_train_raw[, continuous_cols], method = c("zv", "center", "scale"))
+
+> x_train <- x_train_raw
+
+> x_val   <- x_val_raw
+
+> x_test  <- x_test_raw
+
+> x_train[, continuous_cols] <- predict(scaler, x_train_raw[, continuous_cols])
+
+> x_val[, continuous_cols]   <- predict(scaler, x_val_raw[, continuous_cols])
+
+> x_test[, continuous_cols]  <- predict(scaler, x_test_raw[, continuous_cols])
+
+> # 5. Define Model --------------------------------------------------------
+> model <- keras_model_sequential() %>%
++   layer_dense(units = FLAGS$uni .... [TRUNCATED] 
+
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, activation = 'relu') %>%
++     layer_dropout(rate = FLAGS$dro .... [TRUNCATED] 
+
+> model <- model %>% layer_dense(units = 7, activation = 'softmax')
+
+> # 6. Compile & Train -----------------------------------------------------
+> model %>% compile(
++   loss = 'categorical_crossentropy',
++   optimizer .... [TRUNCATED] 
+
+> # --- DIAGNOSTIC CALLBACK ---
+> callback_weightnorm_f1 <- callback_lambda(
++   on_epoch_end = function(epoch, logs) {
++     if (epoch %% 50 == 0) {
+ .... [TRUNCATED] 
+
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epochs, # Use the flag instead of hardcoded 5000          
++   batch_size = FLAGS .... [TRUNCATED] 
+
+EPOCH 51: Norm: 68.42 | Macro F1: 0.4618 | Bal Acc: 0.7383
+
+EPOCH 101: Norm: 80.52 | Macro F1: 0.4868 | Bal Acc: 0.7596
+
+EPOCH 151: Norm: 85.97 | Macro F1: 0.5069 | Bal Acc: 0.7570
+
+EPOCH 201: Norm: 89.13 | Macro F1: 0.5266 | Bal Acc: 0.7527
+
+EPOCH 251: Norm: 91.06 | Macro F1: 0.5463 | Bal Acc: 0.7651
+
+EPOCH 301: Norm: 92.38 | Macro F1: 0.5277 | Bal Acc: 0.7703
+
+EPOCH 351: Norm: 93.16 | Macro F1: 0.5559 | Bal Acc: 0.7596
+
+EPOCH 401: Norm: 93.81 | Macro F1: 0.5262 | Bal Acc: 0.7640
+
+EPOCH 451: Norm: 94.31 | Macro F1: 0.5271 | Bal Acc: 0.7543
+
+EPOCH 501: Norm: 94.79 | Macro F1: 0.5583 | Bal Acc: 0.7596
+
+EPOCH 551: Norm: 95.03 | Macro F1: 0.5391 | Bal Acc: 0.7494
+
+EPOCH 601: Norm: 95.23 | Macro F1: 0.5543 | Bal Acc: 0.7592
+
+EPOCH 651: Norm: 95.36 | Macro F1: 0.5103 | Bal Acc: 0.7392
+
+EPOCH 701: Norm: 95.53 | Macro F1: 0.5401 | Bal Acc: 0.7561
+
+EPOCH 751: Norm: 95.68 | Macro F1: 0.5201 | Bal Acc: 0.7556
+
+EPOCH 801: Norm: 96.20 | Macro F1: 0.5418 | Bal Acc: 0.7558
+
+EPOCH 851: Norm: 96.17 | Macro F1: 0.5196 | Bal Acc: 0.7758
+
+EPOCH 901: Norm: 96.47 | Macro F1: 0.5047 | Bal Acc: 0.7473
+
+EPOCH 951: Norm: 96.76 | Macro F1: 0.5610 | Bal Acc: 0.7688
+
+EPOCH 1001: Norm: 97.36 | Macro F1: 0.5327 | Bal Acc: 0.7552
+
+> # 7. Metrics Calculation -------------------------------------------------
+> val_probs <- model %>% predict(x_val, verbose = 0)
+
+> val_preds <- apply(val_probs, 1, which.max) - 1
+
+> val_true  <- apply(y_val, 1, which.max) - 1
+
+> cm <- confusionMatrix(factor(val_preds, levels = 0:6), factor(val_true, levels = 0:6), mode = "everything")
+
+> macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+
+> bal_acc  <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+
+> # 8. Final Report --------------------------------------------------------
+> # (Same as your script, but uses macro_f1 as the primary driver)
+> list .... [TRUNCATED] 
+$val_loss
+[1] 0.5673831
+
+$val_accuracy
+[1] 0.8629502
+
+$val_f1
+[1] 0.5327003
+
+$val_bal_acc
+[1] 0.7551998
+

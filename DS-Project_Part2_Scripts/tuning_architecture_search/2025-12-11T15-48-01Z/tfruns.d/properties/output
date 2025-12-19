@@ -1,0 +1,146 @@
+
+> # ==============================================================================
+> # Assignment 2 MLP with Imbalance Handling
+> # - Adds SMOTE overs .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(smotefamily) 
+
+> library(magrittr)
+
+> # Helper: Force "Default value if null"
+> `%||%` <- function(x, y) if (is.null(x)) y else x
+
+> # ------------------------------------------------------------------------------
+> # 0. Custom Multiclass SMOTE Helper (Since UBL is unavailable)
+>  .... [TRUNCATED] 
+
+> # ------------------------------------------------------------------------------
+> # 1. Hyperparameter flags
+> # ----------------------------------- .... [TRUNCATED] 
+
+> # ------------------------------------------------------------------------------
+> # 2. Load & Prepare Data
+> # ------------------------------------ .... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.data.frame()
+
+> y_all_vec <- data[[target_col]] 
+
+> y_all_cat <- to_categorical(y_all_vec, num_classes = 8)
+
+> # ------------------------------------------------------------------------------
+> # 3. Split Data
+> # --------------------------------------------- .... [TRUNCATED] 
+
+> n_rows <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, , drop = FALSE]
+
+> y_test_holdout     <- y_all_cat[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, , drop = FALSE]
+
+> y_cv_vec <- y_all_vec[-test_idx] 
+
+> y_cv     <- y_all_cat[-test_idx, ]
+
+> # ------------------------------------------------------------------------------
+> # 4. Cross-Validation Setup
+> # --------------------------------- .... [TRUNCATED] 
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> results <- data.frame(
++   Fold = integer(k),
++   Train_Loss = numeric(k), Val_Loss = numeric(k),
++   Train_Acc = numeric(k), Val_Acc = numeric(k),
+ .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold CV with SMOTE (smotefamily) + class weights...\n")
+Starting 5 -Fold CV with SMOTE (smotefamily) + class weights...
+
+> # ------------------------------------------------------------------------------
+> # 5. Training Loop
+> # ------------------------------------------ .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---
+   Applying Multiclass SMOTE...
+Fold 1 | Val Acc: 0.8202 | Macro F1: 0.5615 | Bal Acc: 0.7473
+
+--- Processing Fold # 2 ---
+   Applying Multiclass SMOTE...
+Fold 2 | Val Acc: 0.8220 | Macro F1: 0.5685 | Bal Acc: 0.7538
+
+--- Processing Fold # 3 ---
+   Applying Multiclass SMOTE...
+Fold 3 | Val Acc: 0.8098 | Macro F1: 0.5339 | Bal Acc: 0.7325
+
+--- Processing Fold # 4 ---
+   Applying Multiclass SMOTE...
+Fold 4 | Val Acc: 0.8192 | Macro F1: 0.5463 | Bal Acc: 0.7675
+
+--- Processing Fold # 5 ---
+   Applying Multiclass SMOTE...
+Fold 5 | Val Acc: 0.8075 | Macro F1: 0.5168 | Bal Acc: 0.7376
+
+> # ------------------------------------------------------------------------------
+> # 6. Final Report & Return
+> # ---------------------------------- .... [TRUNCATED] 
+
+========================================
+
+> cat("   ARCHITECTURE + SMOTE RESULTS        \n")
+   ARCHITECTURE + SMOTE RESULTS        
+
+> cat("========================================\n")
+========================================
+
+> avg_train_acc <- mean(results$Train_Acc)
+
+> avg_val_acc   <- mean(results$Val_Acc)
+
+> avg_macro_f1  <- mean(results$Val_Macro_F1)
+
+> avg_bal_acc   <- mean(results$Val_Bal_Acc)
+
+> avg_val_loss  <- mean(results$Val_Loss)
+
+> cat("Avg Val Accuracy:     ", round(avg_val_acc, 4), "\n")
+Avg Val Accuracy:      0.8157 
+
+> cat("Avg Macro F1 (KEY):   ", round(avg_macro_f1, 4), "\n")
+Avg Macro F1 (KEY):    0.5454 
+
+> cat("Avg Balanced Acc:     ", round(avg_bal_acc, 4), "\n")
+Avg Balanced Acc:      0.7477 
+
+> # CRITICAL: Return list for tfruns
+> list(
++   val_accuracy = avg_val_acc,
++   val_f1       = avg_macro_f1,   # Creates 'metric_val_f1'
++   val_bal_ .... [TRUNCATED] 
+$val_accuracy
+[1] 0.8157468
+
+$val_f1
+[1] 0.5453934
+
+$val_bal_acc
+[1] 0.7477395
+
+$val_loss
+[1] 1.24094
+
+
+> # ==============================================================================
+> # IMBALANCED MULTI-CLASS CREDIT BEHAVIOR – DESIGN RATIONALE & REF .... [TRUNCATED] 

@@ -1,0 +1,15 @@
+Data Split Summary:
+Train samples:  47315 
+Val samples:    10106 
+Test samples:   10133 
+
+========================================
+       SINGLE RUN PERFORMANCE           
+========================================
+Train Accuracy:      0.9742 
+Val Accuracy:        0.8494 
+Val Macro F1 Score:  0.5396  (KEY METRIC)
+Val Balanced Acc:    0.7332 
+Overfitting Gap:     0.1248 
+----------------------------------------
+WARNING: High Overfitting. Increase Dropout.

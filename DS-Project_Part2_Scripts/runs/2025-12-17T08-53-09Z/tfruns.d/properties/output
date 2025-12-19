@@ -1,0 +1,99 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # --- Architecture ---
++   flag_integer("units1", 5 .... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> cat_col    <- "OCCUPATION_TYPE_INT" 
+
+> # 3. Stratified Split Data -----------------------------------------------
+> set.seed(42)
+
+> y_raw_factor <- as.factor(data[[target_col]])
+
+> train_idx    <- createDataPartition(y_raw_factor, p = 0.70, list = FALSE)
+
+> train_data <- data[train_idx, ]
+
+> temp_data  <- data[-train_idx, ]
+
+> val_idx   <- createDataPartition(temp_data[[target_col]], p = 0.5, list = FALSE)
+
+> val_data  <- temp_data[val_idx, ]
+
+> test_data <- temp_data[-val_idx, ]
+
+> # 4. Separate & Preprocess Inputs ----------------------------------------
+> 
+> # Identify numeric columns (excluding target and the categorical emb .... [TRUNCATED] 
+
+> # Create scaler on training data only
+> scaler <- preProcess(train_data[, num_cols], method = c("zv", "center", "scale"))
+
+> prepare_inputs <- function(df) {
++   # 1. Scale numeric features and ensure 'double' type for Keras
++   x_num_mat <- as.matrix(predict(scaler, df[,  .... [TRUNCATED] 
+
+> x_train <- prepare_inputs(train_data)
+
+> x_val   <- prepare_inputs(val_data)
+
+> y_train <- to_categorical(as.numeric(train_data[[target_col]]), num_classes = 7)
+
+> y_val   <- to_categorical(as.numeric(val_data[[target_col]]), num_classes = 7)
+
+> # 5. Define Functional Model (MLP with Embedding Branch) -----------------
+> 
+> # Input 1: Numeric/Boolean Features
+> input_num <- layer_input(shape .... [TRUNCATED] 
+
+> # Input 2: Occupation Categories
+> input_cat <- layer_input(shape = 1, name = "cat_input")
+
+> # Embedding Layer: maps integers to dense vectors
+> # input_dim = 19 covers indices 0 to 18
+> emb_layer <- input_cat %>% 
++   layer_embedding(input_ .... [TRUNCATED] 
+
+> # Merge the learned embedding with numeric features
+> merged <- layer_concatenate(list(input_num, emb_layer))
+
+> # Main MLP Path
+> main_path <- merged %>%
++   layer_dense(units = FLAGS$units1, activation = "relu") %>%
++   layer_dropout(rate = FLAGS$dropout1) %> .... [TRUNCATED] 
+
+> if (FLAGS$units3 > 0) {
++   main_path <- main_path %>%
++     layer_dense(units = FLAGS$units3, activation = "relu") %>%
++     layer_dropout(rate = F .... [TRUNCATED] 
+
+> # Final Softmax Output for 7 classes
+> output <- main_path %>% layer_dense(units = 7, activation = "softmax")
+
+> model <- keras_model(inputs = list(input_num, input_cat), outputs = output)
+
+> # 6. Compile & Train -----------------------------------------------------
+> # Using AdamW to decouple weight decay for better generalization
+> mode .... [TRUNCATED] 
+
+> history <- model %>% fit(
++   x = x_train, y = y_train,
++   epochs = FLAGS$epochs,
++   batch_size = FLAGS$batch_size,
++   validation_data = list(x_v .... [TRUNCATED] 

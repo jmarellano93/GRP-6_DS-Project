@@ -1,0 +1,314 @@
+
+> # ==============================================================================
+> # UPDATES FOR IMBALANCED DATA (NO K-FOLD VERSION):
+> # 1. Split:  .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow) # Needed for tf$norm
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Regularization
++   flag_numeric("dropout1", 0),
++ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> # Prepare Input Matrix
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> # Prepare Targets (One-Hot Encoded)
+> y_all <- to_categorical(data[[target_col]], num_classes = 7)
+
+> # Prepare Raw Target Vector (Needed for Stratified Splitting logic)
+> y_raw_factor <- as.factor(data[[target_col]])
+
+> # 3. Stratified Split Data (Train / Val / Test) --------------------------
+> set.seed(42)
+
+> # A. Create Test Holdout (15% of Total) - STRATIFIED
+> test_idx <- createDataPartition(y_raw_factor, p = 0.15, list = FALSE)
+
+> x_test_raw <- x_all[test_idx, ]
+
+> y_test     <- y_all[test_idx, ]
+
+> # Remaining Data (85% of Total)
+> x_remain <- x_all[-test_idx, ]
+
+> y_remain <- y_all[-test_idx, ]
+
+> y_remain_factor <- y_raw_factor[-test_idx]
+
+> # B. Create Validation Set (15% of Total => ~17.65% of Remaining) - STRATIFIED
+> val_p <- 0.15 / 0.85 # Calculate exact proportion needed
+
+> val_idx <- createDataPartition(y_remain_factor, p = val_p, list = FALSE)
+
+> x_val_raw   <- x_remain[val_idx, ]
+
+> y_val       <- y_remain[val_idx, ]
+
+> # Train Set (Remaining ~70% of Total)
+> x_train_raw <- x_remain[-val_idx, ]
+
+> y_train     <- y_remain[-val_idx, ]
+
+> cat("Data Split Summary (Stratified):\n")
+Data Split Summary (Stratified):
+
+> cat("Train samples: ", nrow(x_train_raw), "\n")
+Train samples:  43267 
+
+> cat("Val samples:   ", nrow(x_val_raw), "\n")
+Val samples:    9274 
+
+> cat("Test samples:  ", nrow(x_test_raw), "\n")
+Test samples:   9276 
+
+> # 4. Preprocessing (Robust Scaling) --------------------------------------
+> scaler <- preProcess(x_train_raw, method = c("zv", "center", "scale"))
+
+> x_train <- predict(scaler, x_train_raw)
+
+> x_val   <- predict(scaler, x_val_raw)
+
+> # 5. Define Model --------------------------------------------------------
+> model <- keras_model_sequential() %>%
++   layer_dense(
++     units = FL .... [TRUNCATED] 
+
+> # Optional: Layer 3
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(
++       units = FLAGS$units3, 
++       activation = 'relu'
++ .... [TRUNCATED] 
+
+> # Output Layer
+> model <- model %>% 
++   layer_dense(units = 7, activation = 'softmax')
+
+> # 6. Compile & Train -----------------------------------------------------
+> model %>% compile(
++   loss = 'categorical_crossentropy',
++   # SGD wit .... [TRUNCATED] 
+
+> # --- DIAGNOSTIC CALLBACK ---
+> callback_weightnorm_f1 <- callback_lambda(
++   on_epoch_end = function(epoch, logs) {
++     
++     # Check every 50  .... [TRUNCATED] 
+
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = 5000,          
++   batch_size = 256,        
++   validation_data = list(x_val, y_val), .... [TRUNCATED] 
+
+
+======================================================
+EPOCH 51 DIAGNOSTICS:
+ > Weight Norm:   50.89 (Goal: Dropping)
+ > Val Macro F1:  0.5135 (Goal: Rising)
+ > Val Bal Acc:   0.6754
+======================================================
+
+
+
+======================================================
+EPOCH 101 DIAGNOSTICS:
+ > Weight Norm:   53.34 (Goal: Dropping)
+ > Val Macro F1:  0.5735 (Goal: Rising)
+ > Val Bal Acc:   0.7232
+======================================================
+
+
+
+======================================================
+EPOCH 151 DIAGNOSTICS:
+ > Weight Norm:   54.58 (Goal: Dropping)
+ > Val Macro F1:  0.6143 (Goal: Rising)
+ > Val Bal Acc:   0.7521
+======================================================
+
+
+
+======================================================
+EPOCH 201 DIAGNOSTICS:
+ > Weight Norm:   54.73 (Goal: Dropping)
+ > Val Macro F1:  0.6134 (Goal: Rising)
+ > Val Bal Acc:   0.7463
+======================================================
+
+
+
+======================================================
+EPOCH 251 DIAGNOSTICS:
+ > Weight Norm:   54.88 (Goal: Dropping)
+ > Val Macro F1:  0.6349 (Goal: Rising)
+ > Val Bal Acc:   0.7663
+======================================================
+
+
+
+======================================================
+EPOCH 301 DIAGNOSTICS:
+ > Weight Norm:   54.82 (Goal: Dropping)
+ > Val Macro F1:  0.6212 (Goal: Rising)
+ > Val Bal Acc:   0.7593
+======================================================
+
+
+
+======================================================
+EPOCH 351 DIAGNOSTICS:
+ > Weight Norm:   54.74 (Goal: Dropping)
+ > Val Macro F1:  0.6231 (Goal: Rising)
+ > Val Bal Acc:   0.7536
+======================================================
+
+
+
+======================================================
+EPOCH 401 DIAGNOSTICS:
+ > Weight Norm:   54.56 (Goal: Dropping)
+ > Val Macro F1:  0.6044 (Goal: Rising)
+ > Val Bal Acc:   0.7577
+======================================================
+
+
+
+======================================================
+EPOCH 451 DIAGNOSTICS:
+ > Weight Norm:   54.34 (Goal: Dropping)
+ > Val Macro F1:  0.5987 (Goal: Rising)
+ > Val Bal Acc:   0.7608
+======================================================
+
+
+
+======================================================
+EPOCH 501 DIAGNOSTICS:
+ > Weight Norm:   54.31 (Goal: Dropping)
+ > Val Macro F1:  0.5940 (Goal: Rising)
+ > Val Bal Acc:   0.7547
+======================================================
+
+
+
+======================================================
+EPOCH 551 DIAGNOSTICS:
+ > Weight Norm:   54.42 (Goal: Dropping)
+ > Val Macro F1:  0.6133 (Goal: Rising)
+ > Val Bal Acc:   0.7582
+======================================================
+
+
+
+======================================================
+EPOCH 601 DIAGNOSTICS:
+ > Weight Norm:   54.44 (Goal: Dropping)
+ > Val Macro F1:  0.6001 (Goal: Rising)
+ > Val Bal Acc:   0.7381
+======================================================
+
+
+
+======================================================
+EPOCH 651 DIAGNOSTICS:
+ > Weight Norm:   54.66 (Goal: Dropping)
+ > Val Macro F1:  0.5894 (Goal: Rising)
+ > Val Bal Acc:   0.7213
+======================================================
+
+
+
+======================================================
+EPOCH 701 DIAGNOSTICS:
+ > Weight Norm:   54.93 (Goal: Dropping)
+ > Val Macro F1:  0.5861 (Goal: Rising)
+ > Val Bal Acc:   0.7564
+======================================================
+
+
+
+======================================================
+EPOCH 751 DIAGNOSTICS:
+ > Weight Norm:   55.09 (Goal: Dropping)
+ > Val Macro F1:  0.5957 (Goal: Rising)
+ > Val Bal Acc:   0.7427
+======================================================
+
+
+
+======================================================
+EPOCH 801 DIAGNOSTICS:
+ > Weight Norm:   55.17 (Goal: Dropping)
+ > Val Macro F1:  0.5873 (Goal: Rising)
+ > Val Bal Acc:   0.7441
+======================================================
+
+
+
+======================================================
+EPOCH 851 DIAGNOSTICS:
+ > Weight Norm:   55.27 (Goal: Dropping)
+ > Val Macro F1:  0.6036 (Goal: Rising)
+ > Val Bal Acc:   0.7500
+======================================================
+
+
+
+======================================================
+EPOCH 901 DIAGNOSTICS:
+ > Weight Norm:   55.62 (Goal: Dropping)
+ > Val Macro F1:  0.5917 (Goal: Rising)
+ > Val Bal Acc:   0.7530
+======================================================
+
+
+
+======================================================
+EPOCH 951 DIAGNOSTICS:
+ > Weight Norm:   55.85 (Goal: Dropping)
+ > Val Macro F1:  0.5950 (Goal: Rising)
+ > Val Bal Acc:   0.7460
+======================================================
+
+
+
+======================================================
+EPOCH 1001 DIAGNOSTICS:
+ > Weight Norm:   55.97 (Goal: Dropping)
+ > Val Macro F1:  0.5769 (Goal: Rising)
+ > Val Bal Acc:   0.7278
+======================================================
+
+
+
+======================================================
+EPOCH 1051 DIAGNOSTICS:
+ > Weight Norm:   56.09 (Goal: Dropping)
+ > Val Macro F1:  0.5684 (Goal: Rising)
+ > Val Bal Acc:   0.7145
+======================================================
+
+
+
+======================================================
+EPOCH 1101 DIAGNOSTICS:
+ > Weight Norm:   56.21 (Goal: Dropping)
+ > Val Macro F1:  0.5765 (Goal: Rising)
+ > Val Bal Acc:   0.7141
+======================================================
+

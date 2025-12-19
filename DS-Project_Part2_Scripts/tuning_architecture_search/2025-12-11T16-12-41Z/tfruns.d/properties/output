@@ -1,0 +1,127 @@
+
+> # ==============================================================================
+> # UPDATES FOR IMBALANCED DATA:
+> # 1. Added Macro F1 and Balanced .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Regularization
++   flag_numeric("dropout1", 0),
++ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 8)
+
+> # 3. Split Data ----------------------------------------------------------
+> set.seed(42)
+
+> # Holdout Test Set (15%)
+> n_rows <- nrow(x_all)
+
+> test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+
+> x_test_holdout_raw <- x_all[test_idx, ]
+
+> y_test_holdout     <- y_all[test_idx, ]
+
+> x_cv_raw <- x_all[-test_idx, ] 
+
+> y_cv     <- y_all[-test_idx, ]
+
+> # 4. Cross-Validation Setup ----------------------------------------------
+> k <- 5
+
+> folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+
+> # Initialize Storage (Added F1 and Balanced Acc)
+> results <- data.frame(
++   Fold = integer(),
++   Train_Loss = numeric(),
++   Val_Loss = numeric() .... [TRUNCATED] 
+
+> cat("Starting", k, "-Fold Cross-Validation (Variable Depth)...\n")
+Starting 5 -Fold Cross-Validation (Variable Depth)...
+
+> # 5. Training Loop -------------------------------------------------------
+> for(i in 1:k){
++   cat("\n--- Processing Fold #", i, "---\n")
++   
++    .... [TRUNCATED] 
+
+--- Processing Fold # 1 ---
+Fold 1 | Val Acc: 0.8457 | Macro F1: 0.5616 | Bal Acc: 0.7418
+
+--- Processing Fold # 2 ---
+Fold 2 | Val Acc: 0.8473 | Macro F1: 0.5908 | Bal Acc: 0.7586
+
+--- Processing Fold # 3 ---
+Fold 3 | Val Acc: 0.8451 | Macro F1: 0.5752 | Bal Acc: 0.7228
+
+--- Processing Fold # 4 ---
+Fold 4 | Val Acc: 0.8514 | Macro F1: 0.5736 | Bal Acc: 0.7463
+
+--- Processing Fold # 5 ---
+Fold 5 | Val Acc: 0.8487 | Macro F1: 0.5737 | Bal Acc: 0.7536
+
+> # 6. Final Report --------------------------------------------------------
+> cat("\n========================================\n")
+
+========================================
+
+> cat("      ARCHITECTURE PERFORMANCE          \n")
+      ARCHITECTURE PERFORMANCE          
+
+> cat("========================================\n")
+========================================
+
+> avg_train_acc <- mean(results$Train_Acc)
+
+> avg_val_acc   <- mean(results$Val_Acc)
+
+> avg_macro_f1  <- mean(results$Val_Macro_F1) # NEW
+
+> avg_bal_acc   <- mean(results$Val_Bal_Acc)  # NEW
+
+> gap <- avg_train_acc - avg_val_acc
+
+> cat("Avg Train Accuracy:   ", round(avg_train_acc, 4), "\n")
+Avg Train Accuracy:    0.9608 
+
+> cat("Avg Val Accuracy:     ", round(avg_val_acc, 4), "\n")
+Avg Val Accuracy:      0.8476 
+
+> cat("Avg Macro F1 Score:   ", round(avg_macro_f1, 4), " (KEY METRIC)\n")
+Avg Macro F1 Score:    0.575  (KEY METRIC)
+
+> cat("Avg Balanced Acc:     ", round(avg_bal_acc, 4), "\n")
+Avg Balanced Acc:      0.7446 
+
+> cat("Overfitting Gap:      ", round(gap, 4), "\n")
+Overfitting Gap:       0.1131 
+
+> cat("----------------------------------------\n")
+----------------------------------------
+
+> if(gap > 0.05) {
++   cat("WARNING: High Overfitting. Increase Dropout.\n")
++ } else if(avg_macro_f1 < 0.50) {
++   cat("WARNING: Poor Minority Class  ..." ... [TRUNCATED] 
+WARNING: High Overfitting. Increase Dropout.
+
+> # tfruns will create columns named 'metric_val_f1', 'metric_val_bal_acc', etc.
+> list(
++   val_loss = avg_val_loss,
++   val_accuracy = avg_val_acc,
+ .... [TRUNCATED] 

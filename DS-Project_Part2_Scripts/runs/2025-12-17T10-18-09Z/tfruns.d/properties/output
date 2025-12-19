@@ -1,0 +1,368 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   flag_integer("units1", 128),
++   flag_integer("unit ..." ... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_all <- to_categorical(data[[target_col]], num_classes = 7)
+
+> y_raw_factor <- as.factor(data[[target_col]])
+
+> # 3. Stratified Split Data ----------------------------------------------
+> set.seed(42)
+
+> test_idx <- createDataPartition(y_raw_factor, p = 0.15, list = FALSE)
+
+> x_test_raw <- x_all[test_idx, ]
+
+> y_test     <- y_all[test_idx, ]
+
+> x_remain <- x_all[-test_idx, ]
+
+> y_remain <- y_all[-test_idx, ]
+
+> y_remain_factor <- y_raw_factor[-test_idx]
+
+> val_p <- 0.15 / 0.85 
+
+> val_idx <- createDataPartition(y_remain_factor, p = val_p, list = FALSE)
+
+> x_val_raw   <- x_remain[val_idx, ]
+
+> y_val       <- y_remain[val_idx, ]
+
+> x_train_raw <- x_remain[-val_idx, ]
+
+> y_train     <- y_remain[-val_idx, ]
+
+> # --- 3.5 Calculate Class Weights ---
+> # We calculate these based on the TRAINING set only to avoid data leakage
+> train_counts <- table(y_remain_f .... [TRUNCATED] 
+
+> total_train <- sum(train_counts)
+
+> n_classes <- 7
+
+> # Inverse Frequency Formula: Total / (n_classes * class_count)
+> class_weights_list <- list()
+
+> for (i in 0:(n_classes - 1)) {
++   class_label <- as.character(i)
++   weight <- total_train / (n_classes * train_counts[class_label])
++   class_weig .... [TRUNCATED] 
+
+> # OPTIONAL: Manual Override (Uncomment if you want to force specific severity)
+> class_weights_list[["0"]] <- 1.0 
+
+> class_weights_list[["1"]] <- 5.0 
+
+> class_weights_list[["2"]] <- 15.0 
+
+> class_weights_list[["3"]] <- 30.0
+
+> class_weights_list[["4"]] <- 50.0 
+
+> class_weights_list[["5"]] <- 50.0 
+
+> class_weights_list[["6"]] <- 50.0
+
+> cat("Calculated Class Weights:\n")
+Calculated Class Weights:
+
+> print(unlist(class_weights_list))
+ 0  1  2  3  4  5  6 
+ 1  5 15 30 50 50 50 
+
+> # 4. Preprocessing (Robust Scaling) --------------------------------------
+> all_cols <- colnames(x_train_raw)
+
+> binary_cols <- all_cols[apply(x_train_raw, 2, function(x) all(x %in% c(0, 1)))]
+
+> continuous_cols <- setdiff(all_cols, binary_cols)
+
+> scaler <- preProcess(x_train_raw[, continuous_cols], method = c("zv", "center", "scale"))
+
+> x_train <- x_train_raw
+
+> x_val   <- x_val_raw
+
+> x_test  <- x_test_raw
+
+> x_train[, continuous_cols] <- predict(scaler, x_train_raw[, continuous_cols])
+
+> x_val[, continuous_cols]   <- predict(scaler, x_val_raw[, continuous_cols])
+
+> x_test[, continuous_cols]  <- predict(scaler, x_test_raw[, continuous_cols])
+
+> # 5. Define Model --------------------------------------------------------
+> model <- keras_model_sequential() %>%
++   layer_dense(units = FLAGS$uni .... [TRUNCATED] 
+
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, activation = 'relu') %>%
++     layer_dropout(rate = FLAGS$dro .... [TRUNCATED] 
+
+> model <- model %>% layer_dense(units = 7, activation = 'softmax')
+
+> # 6. Compile & Train -----------------------------------------------------
+> model %>% compile(
++   loss = 'categorical_crossentropy',
++   optimizer .... [TRUNCATED] 
+
+> # --- DIAGNOSTIC CALLBACK ---
+> callback_weightnorm_f1 <- callback_lambda(
++   on_epoch_end = function(epoch, logs) {
++     if (epoch %% 50 == 0) {
+ .... [TRUNCATED] 
+
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epochs, # Use the flag instead of hardcoded 5000          
++   batch_size = FLAGS .... [TRUNCATED] 
+
+EPOCH 51: Norm: 29.44 | Macro F1: 0.4306 | Bal Acc: 0.6338
+
+EPOCH 101: Norm: 33.85 | Macro F1: 0.4766 | Bal Acc: 0.6925
+
+EPOCH 151: Norm: 36.62 | Macro F1: 0.5074 | Bal Acc: 0.7168
+
+EPOCH 201: Norm: 38.50 | Macro F1: 0.5292 | Bal Acc: 0.7222
+
+EPOCH 251: Norm: 39.94 | Macro F1: 0.5410 | Bal Acc: 0.7384
+
+EPOCH 301: Norm: 41.11 | Macro F1: 0.5577 | Bal Acc: 0.7395
+
+EPOCH 351: Norm: 42.05 | Macro F1: 0.5712 | Bal Acc: 0.7332
+
+EPOCH 401: Norm: 42.91 | Macro F1: 0.5646 | Bal Acc: 0.7315
+
+EPOCH 451: Norm: 43.61 | Macro F1: 0.5735 | Bal Acc: 0.7298
+
+EPOCH 501: Norm: 44.21 | Macro F1: 0.5663 | Bal Acc: 0.7326
+
+EPOCH 551: Norm: 44.72 | Macro F1: 0.5791 | Bal Acc: 0.7343
+
+EPOCH 601: Norm: 45.18 | Macro F1: 0.5800 | Bal Acc: 0.7260
+
+EPOCH 651: Norm: 45.58 | Macro F1: 0.5778 | Bal Acc: 0.7261
+
+EPOCH 701: Norm: 45.91 | Macro F1: 0.5711 | Bal Acc: 0.7306
+
+EPOCH 751: Norm: 46.14 | Macro F1: 0.5801 | Bal Acc: 0.7306
+
+EPOCH 801: Norm: 46.41 | Macro F1: 0.5903 | Bal Acc: 0.7257
+
+EPOCH 851: Norm: 46.66 | Macro F1: 0.5726 | Bal Acc: 0.7371
+
+EPOCH 901: Norm: 46.82 | Macro F1: 0.5707 | Bal Acc: 0.7360
+
+EPOCH 951: Norm: 47.03 | Macro F1: 0.5698 | Bal Acc: 0.7434
+
+EPOCH 1001: Norm: 47.22 | Macro F1: 0.5895 | Bal Acc: 0.7325
+
+EPOCH 1051: Norm: 47.39 | Macro F1: 0.5746 | Bal Acc: 0.7315
+
+EPOCH 1101: Norm: 47.53 | Macro F1: 0.5894 | Bal Acc: 0.7347
+
+EPOCH 1151: Norm: 47.62 | Macro F1: 0.5797 | Bal Acc: 0.7245
+
+EPOCH 1201: Norm: 47.78 | Macro F1: 0.5865 | Bal Acc: 0.7384
+
+EPOCH 1251: Norm: 47.90 | Macro F1: 0.5739 | Bal Acc: 0.7346
+
+EPOCH 1301: Norm: 48.00 | Macro F1: 0.5784 | Bal Acc: 0.7414
+
+EPOCH 1351: Norm: 48.06 | Macro F1: 0.5905 | Bal Acc: 0.7304
+
+EPOCH 1401: Norm: 48.12 | Macro F1: 0.5959 | Bal Acc: 0.7317
+
+EPOCH 1451: Norm: 48.20 | Macro F1: 0.5730 | Bal Acc: 0.7326
+
+EPOCH 1501: Norm: 48.27 | Macro F1: 0.5917 | Bal Acc: 0.7292
+
+EPOCH 1551: Norm: 48.32 | Macro F1: 0.5681 | Bal Acc: 0.7458
+
+EPOCH 1601: Norm: 48.37 | Macro F1: 0.5791 | Bal Acc: 0.7345
+
+EPOCH 1651: Norm: 48.42 | Macro F1: 0.5758 | Bal Acc: 0.7241
+
+EPOCH 1701: Norm: 48.46 | Macro F1: 0.5776 | Bal Acc: 0.7383
+
+EPOCH 1751: Norm: 48.50 | Macro F1: 0.5921 | Bal Acc: 0.7323
+
+EPOCH 1801: Norm: 48.56 | Macro F1: 0.5752 | Bal Acc: 0.7230
+
+EPOCH 1851: Norm: 48.61 | Macro F1: 0.5738 | Bal Acc: 0.7379
+
+EPOCH 1901: Norm: 48.67 | Macro F1: 0.5773 | Bal Acc: 0.7327
+
+EPOCH 1951: Norm: 48.72 | Macro F1: 0.5670 | Bal Acc: 0.7451
+
+EPOCH 2001: Norm: 48.75 | Macro F1: 0.5943 | Bal Acc: 0.7391
+
+EPOCH 2051: Norm: 48.78 | Macro F1: 0.5760 | Bal Acc: 0.7234
+
+EPOCH 2101: Norm: 48.81 | Macro F1: 0.5863 | Bal Acc: 0.7335
+
+EPOCH 2151: Norm: 48.82 | Macro F1: 0.5691 | Bal Acc: 0.7330
+
+EPOCH 2201: Norm: 48.82 | Macro F1: 0.5986 | Bal Acc: 0.7329
+
+EPOCH 2251: Norm: 48.79 | Macro F1: 0.5892 | Bal Acc: 0.7435
+
+EPOCH 2301: Norm: 48.79 | Macro F1: 0.5777 | Bal Acc: 0.7444
+
+EPOCH 2351: Norm: 48.79 | Macro F1: 0.5737 | Bal Acc: 0.7380
+
+EPOCH 2401: Norm: 48.78 | Macro F1: 0.5838 | Bal Acc: 0.7277
+
+EPOCH 2451: Norm: 48.77 | Macro F1: 0.5800 | Bal Acc: 0.7323
+
+EPOCH 2501: Norm: 48.76 | Macro F1: 0.5777 | Bal Acc: 0.7370
+
+EPOCH 2551: Norm: 48.76 | Macro F1: 0.5889 | Bal Acc: 0.7380
+
+EPOCH 2601: Norm: 48.80 | Macro F1: 0.5845 | Bal Acc: 0.7372
+
+EPOCH 2651: Norm: 48.78 | Macro F1: 0.5665 | Bal Acc: 0.7388
+
+EPOCH 2701: Norm: 48.80 | Macro F1: 0.5860 | Bal Acc: 0.7217
+
+EPOCH 2751: Norm: 48.81 | Macro F1: 0.5760 | Bal Acc: 0.7384
+
+EPOCH 2801: Norm: 48.82 | Macro F1: 0.5873 | Bal Acc: 0.7287
+
+EPOCH 2851: Norm: 48.84 | Macro F1: 0.5710 | Bal Acc: 0.7327
+
+EPOCH 2901: Norm: 48.84 | Macro F1: 0.5658 | Bal Acc: 0.7434
+
+EPOCH 2951: Norm: 48.85 | Macro F1: 0.5889 | Bal Acc: 0.7339
+
+EPOCH 3001: Norm: 48.86 | Macro F1: 0.5889 | Bal Acc: 0.7298
+
+EPOCH 3051: Norm: 48.85 | Macro F1: 0.5643 | Bal Acc: 0.7377
+
+EPOCH 3101: Norm: 48.88 | Macro F1: 0.5947 | Bal Acc: 0.7318
+
+EPOCH 3151: Norm: 48.86 | Macro F1: 0.5707 | Bal Acc: 0.7464
+
+EPOCH 3201: Norm: 48.85 | Macro F1: 0.5820 | Bal Acc: 0.7330
+
+EPOCH 3251: Norm: 48.87 | Macro F1: 0.5745 | Bal Acc: 0.7381
+
+EPOCH 3301: Norm: 48.86 | Macro F1: 0.5787 | Bal Acc: 0.7340
+
+EPOCH 3351: Norm: 48.87 | Macro F1: 0.5768 | Bal Acc: 0.7328
+
+EPOCH 3401: Norm: 48.85 | Macro F1: 0.5864 | Bal Acc: 0.7347
+
+EPOCH 3451: Norm: 48.87 | Macro F1: 0.5636 | Bal Acc: 0.7405
+
+EPOCH 3501: Norm: 48.90 | Macro F1: 0.5819 | Bal Acc: 0.7328
+
+EPOCH 3551: Norm: 48.89 | Macro F1: 0.5974 | Bal Acc: 0.7338
+
+EPOCH 3601: Norm: 48.93 | Macro F1: 0.5674 | Bal Acc: 0.7332
+
+EPOCH 3651: Norm: 48.95 | Macro F1: 0.5856 | Bal Acc: 0.7337
+
+EPOCH 3701: Norm: 48.93 | Macro F1: 0.5802 | Bal Acc: 0.7377
+
+EPOCH 3751: Norm: 48.95 | Macro F1: 0.5711 | Bal Acc: 0.7211
+
+EPOCH 3801: Norm: 48.93 | Macro F1: 0.5614 | Bal Acc: 0.7443
+
+EPOCH 3851: Norm: 48.95 | Macro F1: 0.5809 | Bal Acc: 0.7396
+
+EPOCH 3901: Norm: 48.95 | Macro F1: 0.5819 | Bal Acc: 0.7295
+
+EPOCH 3951: Norm: 48.98 | Macro F1: 0.5671 | Bal Acc: 0.7369
+
+EPOCH 4001: Norm: 49.01 | Macro F1: 0.5484 | Bal Acc: 0.7491
+
+EPOCH 4051: Norm: 49.04 | Macro F1: 0.5761 | Bal Acc: 0.7411
+
+EPOCH 4101: Norm: 49.00 | Macro F1: 0.5703 | Bal Acc: 0.7385
+
+EPOCH 4151: Norm: 49.02 | Macro F1: 0.5632 | Bal Acc: 0.7418
+
+EPOCH 4201: Norm: 49.06 | Macro F1: 0.5757 | Bal Acc: 0.7399
+
+EPOCH 4251: Norm: 49.08 | Macro F1: 0.5868 | Bal Acc: 0.7420
+
+EPOCH 4301: Norm: 49.10 | Macro F1: 0.5930 | Bal Acc: 0.7351
+
+EPOCH 4351: Norm: 49.11 | Macro F1: 0.5806 | Bal Acc: 0.7333
+
+EPOCH 4401: Norm: 49.09 | Macro F1: 0.5792 | Bal Acc: 0.7390
+
+EPOCH 4451: Norm: 49.09 | Macro F1: 0.5784 | Bal Acc: 0.7405
+
+EPOCH 4501: Norm: 49.09 | Macro F1: 0.5860 | Bal Acc: 0.7297
+
+EPOCH 4551: Norm: 49.10 | Macro F1: 0.5930 | Bal Acc: 0.7302
+
+EPOCH 4601: Norm: 49.10 | Macro F1: 0.5786 | Bal Acc: 0.7390
+
+EPOCH 4651: Norm: 49.09 | Macro F1: 0.5707 | Bal Acc: 0.7417
+
+EPOCH 4701: Norm: 49.12 | Macro F1: 0.6021 | Bal Acc: 0.7336
+
+EPOCH 4751: Norm: 49.10 | Macro F1: 0.5800 | Bal Acc: 0.7292
+
+EPOCH 4801: Norm: 49.06 | Macro F1: 0.5613 | Bal Acc: 0.7341
+
+EPOCH 4851: Norm: 49.10 | Macro F1: 0.5567 | Bal Acc: 0.7404
+
+EPOCH 4901: Norm: 49.11 | Macro F1: 0.5782 | Bal Acc: 0.7389
+
+EPOCH 4951: Norm: 49.12 | Macro F1: 0.5819 | Bal Acc: 0.7321
+
+EPOCH 5001: Norm: 49.15 | Macro F1: 0.5776 | Bal Acc: 0.7389
+
+> # 7. Metrics Calculation -------------------------------------------------
+> val_probs <- model %>% predict(x_val, verbose = 0)
+
+> val_preds <- apply(val_probs, 1, which.max) - 1
+
+> val_true  <- apply(y_val, 1, which.max) - 1
+
+> cm <- confusionMatrix(factor(val_preds, levels = 0:6), factor(val_true, levels = 0:6), mode = "everything")
+
+> macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+
+> bal_acc  <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+
+> # 8. Final Report --------------------------------------------------------
+> # (Same as your script, but uses macro_f1 as the primary driver)
+> list .... [TRUNCATED] 
+$val_loss
+[1] 0.470305
+
+$val_accuracy
+[1] 0.8623032
+
+$val_f1
+[1] 0.5776308
+
+$val_bal_acc
+[1] 0.7388615
+

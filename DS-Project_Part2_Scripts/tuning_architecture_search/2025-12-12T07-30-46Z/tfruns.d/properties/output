@@ -1,0 +1,27 @@
+Starting 5 -Fold Cross-Validation (Variable Depth)...
+
+--- Processing Fold # 1 ---
+Fold 1 | Val Acc: 0.8192 | Macro F1: 0.4126 | Bal Acc: 0.6167
+
+--- Processing Fold # 2 ---
+Fold 2 | Val Acc: 0.8223 | Macro F1: 0.4659 | Bal Acc: 0.6366
+
+--- Processing Fold # 3 ---
+Fold 3 | Val Acc: 0.8133 | Macro F1: 0.3904 | Bal Acc: 0.6057
+
+--- Processing Fold # 4 ---
+Fold 4 | Val Acc: 0.8218 | Macro F1: 0.4615 | Bal Acc: 0.6367
+
+--- Processing Fold # 5 ---
+Fold 5 | Val Acc: 0.8133 | Macro F1: 0.3812 | Bal Acc: 0.6066
+
+========================================
+      ARCHITECTURE PERFORMANCE          
+========================================
+Avg Train Accuracy:    0.817 
+Avg Val Accuracy:      0.818 
+Avg Macro F1 Score:    0.4223  (KEY METRIC)
+Avg Balanced Acc:      0.6205 
+Overfitting Gap:       -0.001 
+----------------------------------------
+WARNING: Poor Minority Class Performance. Check Class Weights.

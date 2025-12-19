@@ -1,0 +1,145 @@
+
+> # ==============================================================================
+> # UPDATES FOR IMBALANCED DATA (UNDERSAMPLING VERSION, NO K-FOLD): .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Regularization
++   flag_numeric("dropout1", 0),
++ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> data <- read.csv(
++   "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> y_raw <- data[[target_col]]
+
+> y_all <- to_categorical(y_raw, num_classes = 7)
+
+> y_factor <- factor(y_raw)
+
+> # 3. Stratified Split: Train / Val / Test --------------------------------
+> set.seed(42)
+
+> # --- Test (15%) ---
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> x_test_raw <- x_all[test_idx, ]
+
+> y_test     <- y_all[test_idx, ]
+
+> x_remain <- x_all[-test_idx, ]
+
+> y_remain <- y_all[-test_idx, ]
+
+> y_remain_raw <- y_raw[-test_idx]
+
+> y_remain_factor <- factor(y_remain_raw)
+
+> # --- Validation (15% total) ---
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(y_remain_factor, p = val_p, list = FALSE)
+
+> x_val_raw <- x_remain[val_idx, ]
+
+> y_val     <- y_remain[val_idx, ]
+
+> # --- Training (~70%) ---
+> x_train_raw <- x_remain[-val_idx, ]
+
+> y_train_raw <- y_remain_raw[-val_idx]
+
+> y_train     <- y_all[-test_idx, ][-val_idx, ]
+
+> cat("Before undersampling:\n")
+Before undersampling:
+
+> print(table(y_train_raw))
+y_train_raw
+    0     1     2     3     4     5     6 
+ 1263 36488  4543   498   135    79   261 
+
+> # 4. UNDERSAMPLING CLASS 0 (TRAIN ONLY) ----------------------------------
+> set.seed(42)
+
+> train_df <- data.frame(x_train_raw)
+
+> train_df$target <- y_train_raw
+
+> majority_class <- 0
+
+> # Target size: 2x largest minority class
+> class_counts <- table(train_df$target)
+
+> target_n0 <- 2 * max(class_counts[names(class_counts) != "0"])
+
+> df_majority <- train_df %>% filter(target == majority_class)
+
+> df_minority <- train_df %>% filter(target != majority_class)
+
+> df_majority_down <- df_majority %>%
++   sample_n(size = min(target_n0, nrow(df_majority)))
+
+> train_balanced <- bind_rows(df_majority_down, df_minority) %>%
++   sample_frac(1)
+
+> cat("\nAfter undersampling:\n")
+
+After undersampling:
+
+> print(table(train_balanced$target))
+
+    0     1     2     3     4     5     6 
+ 1263 36488  4543   498   135    79   261 
+
+> # Rebuild matrices
+> x_train_raw <- as.matrix(train_balanced %>% select(-target))
+
+> y_train     <- to_categorical(train_balanced$target, num_classes = 7)
+
+> # 5. Preprocessing (Robust Scaling) --------------------------------------
+> scaler <- preProcess(x_train_raw, method = c("zv", "center", "scale"))
+
+> x_train <- predict(scaler, x_train_raw)
+
+> x_val   <- predict(scaler, x_val_raw)
+
+> # 6. Define Model --------------------------------------------------------
+> model <- keras_model_sequential() %>%
++   layer_dense(
++     units = FL .... [TRUNCATED] 
+
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, activation = "relu") %>%
++     layer_dropout(rate = FLAGS$dro .... [TRUNCATED] 
+
+> model <- model %>%
++   layer_dense(units = 7, activation = "softmax")
+
+> # 7. Compile -------------------------------------------------------------
+> model %>% compile(
++   loss = "categorical_crossentropy",
++   optimizer .... [TRUNCATED] 
+
+> # 8. Diagnostics Callback ------------------------------------------------
+> callback_weightnorm_f1 <- callback_lambda(
++   on_epoch_end = function( .... [TRUNCATED] 
+
+> # 9. Train ---------------------------------------------------------------
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epoc .... [TRUNCATED] 

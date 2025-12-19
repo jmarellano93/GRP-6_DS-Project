@@ -21,14 +21,14 @@ library(magrittr)
 # ------------------------------------------------------------------------------
 # This iterates through every class and generates synthetic samples 
 # until all classes match the majority class count.
-apply_multiclass_smote <- function(x, y, k = 5) {
+apply_multiclass_smote <- function(x, y, k = 3) {
   # Combine for processing
   data_tmp <- as.data.frame(x)
   data_tmp$class <- y
   
   # Identify counts
   class_counts <- table(data_tmp$class)
-  target_size <- max(class_counts)
+  target_size <- max(class_counts) * 0.5 # Target half the majority class
   classes <- names(class_counts)
   
   # Store final data
@@ -105,9 +105,9 @@ FLAGS <- flags(
   flag_numeric("dropout1", 0), 
   flag_numeric("dropout2", 0),
   flag_numeric("dropout3", 0), 
-  flag_integer("units1", 128),
-  flag_integer("units2", 64),
-  flag_integer("units3", 32), 
+  flag_integer("units1", 256),
+  flag_integer("units2", 128),
+  flag_integer("units3", 64), 
   flag_numeric("learning_rate", 0.001),
   flag_integer("batch_size", 128),
   flag_integer("epochs", 100)
@@ -152,7 +152,6 @@ results <- data.frame(
 )
 
 cat("Starting", k, "-Fold CV with SMOTE (smotefamily) + class weights...\n")
-
 # ------------------------------------------------------------------------------
 # 5. Training Loop
 # ------------------------------------------------------------------------------
@@ -170,8 +169,7 @@ for (i in 1:k) {
   y_fold_val     <- y_cv[val_indices, , drop = FALSE]
   y_fold_val_vec <- y_cv_vec[val_indices]
   
-  # b. SMOTE on training fold (Using our custom helper)
-  #    Note: SMOTE works on numeric data. Ensure x is numeric.
+  # b. SMOTE on training fold
   cat("   Applying Multiclass SMOTE...\n")
   smote_df <- apply_multiclass_smote(x_fold_train_raw, y_fold_train_vec, k = 5)
   
@@ -179,7 +177,7 @@ for (i in 1:k) {
   x_fold_train_smote <- smote_df %>% select(-class)
   y_fold_train_smote_vec <- as.integer(as.character(smote_df$class))
   
-  # c. Robust Scaling (fit on SMOTE'd training)
+  # c. Robust Scaling
   fold_scaler <- preProcess(x_fold_train_smote, method = c("zv", "center", "scale"))
   x_fold_train <- predict(fold_scaler, x_fold_train_smote) %>% as.matrix()
   x_fold_val   <- predict(fold_scaler, x_fold_val_raw) %>% as.matrix()
@@ -187,16 +185,15 @@ for (i in 1:k) {
   # d. One-hot encode training labels
   y_fold_train <- to_categorical(y_fold_train_smote_vec, num_classes = 8)
   
-  # e. Compute class weights
-  class_counts <- table(y_fold_train_smote_vec)
-  total <- sum(class_counts)
-  n_classes <- length(class_counts)
-  # Safe division
-  class_weights_vec <- total / (n_classes * as.numeric(class_counts))
-  names(class_weights_vec) <- names(class_counts)
-  class_weight_list <- as.list(class_weights_vec)
+  # e. Compute class weights -- COMMENTED OUT FOR NOW
+  # class_counts <- table(y_fold_train_smote_vec)
+  # total <- sum(class_counts)
+  # n_classes <- length(class_counts)
+  # class_weights_vec <- total / (n_classes * as.numeric(class_counts))
+  # names(class_weights_vec) <- names(class_counts)
+  # class_weight_list <- as.list(class_weights_vec)
   
-  # f. Define Model (Keras 3 CPU Syntax)
+  # f. Define Model
   model <- keras_model_sequential() %>%
     layer_dense(
       units = FLAGS$units1,
@@ -222,14 +219,14 @@ for (i in 1:k) {
     metrics = c("accuracy")
   )
   
-  # h. Train
+  # h. Train (REMOVED class_weight argument)
   history <- model %>% fit(
     x_fold_train, y_fold_train,
     batch_size = FLAGS$batch_size,
     epochs = FLAGS$epochs,
-    verbose = 1,
-    validation_data = list(x_fold_val, y_fold_val),
-    class_weight = class_weight_list
+    verbose = 0,
+    validation_data = list(x_fold_val, y_fold_val)
+    # class_weight = class_weight_list  <-- REMOVED
   )
   
   # i. Metrics Extraction
@@ -238,19 +235,16 @@ for (i in 1:k) {
   train_loss_vec <- history$metrics$loss
   train_acc_vec <- history$metrics$accuracy %||% history$metrics$acc
   
-  # Use best epoch based on Accuracy
   best_epoch_idx <- which.max(val_acc_vec)
-  
   best_val_acc   <- val_acc_vec[best_epoch_idx]
   best_train_acc <- train_acc_vec[best_epoch_idx]
   final_val_loss <- val_loss_vec[best_epoch_idx]
   final_train_loss <- train_loss_vec[best_epoch_idx]
   
-  # j. Custom Metrics (F1 / Balanced Acc)
+  # j. Custom Metrics
   val_probs <- model %>% predict(x_fold_val, verbose = 0)
   val_preds <- apply(val_probs, 1, which.max) - 1
   
-  # Ensure factors have all levels 0..7
   u_levs <- as.character(0:7)
   cm <- confusionMatrix(
     factor(val_preds, levels = u_levs),
@@ -290,8 +284,8 @@ cat("Avg Balanced Acc:     ", round(avg_bal_acc, 4), "\n")
 # CRITICAL: Return list for tfruns
 list(
   val_accuracy = avg_val_acc,
-  val_f1       = avg_macro_f1,   # Creates 'metric_val_f1'
-  val_bal_acc  = avg_bal_acc,    # Creates 'metric_val_bal_acc'
+  val_f1       = avg_macro_f1,   
+  val_bal_acc  = avg_bal_acc,    
   val_loss     = avg_val_loss
 )
 

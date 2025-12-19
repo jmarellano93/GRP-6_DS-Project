@@ -1,0 +1,112 @@
+
+> # ==============================================================================
+> # UPDATES FOR IMBALANCED DATA (NO K-FOLD VERSION):
+> # 1. Split:  .... [TRUNCATED] 
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Regularization
++   flag_numeric("dropout1", 0),
++ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> # Prepare Input Matrix
+> x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+> # Prepare Targets (One-Hot Encoded)
+> y_all <- to_categorical(data[[target_col]], num_classes = 7)
+
+> # Prepare Raw Target Vector (Needed for Stratified Splitting logic)
+> y_raw_factor <- as.factor(data[[target_col]])
+
+> # 3. Stratified Split Data (Train / Val / Test) --------------------------
+> set.seed(42)
+
+> # A. Create Test Holdout (15% of Total) - STRATIFIED
+> # createDataPartition returns indices that preserve class distribution
+> test_idx <- createDa .... [TRUNCATED] 
+
+> x_test_raw <- x_all[test_idx, ]
+
+> y_test     <- y_all[test_idx, ]
+
+> # Remaining Data (85% of Total)
+> x_remain <- x_all[-test_idx, ]
+
+> y_remain <- y_all[-test_idx, ]
+
+> y_remain_factor <- y_raw_factor[-test_idx]
+
+> # B. Create Validation Set (15% of Total => ~17.65% of Remaining) - STRATIFIED
+> val_p <- 0.15 / 0.85 # Calculate exact proportion needed
+
+> val_idx <- createDataPartition(y_remain_factor, p = val_p, list = FALSE)
+
+> x_val_raw   <- x_remain[val_idx, ]
+
+> y_val       <- y_remain[val_idx, ]
+
+> # Train Set (Remaining ~70% of Total)
+> x_train_raw <- x_remain[-val_idx, ]
+
+> y_train     <- y_remain[-val_idx, ]
+
+> cat("Data Split Summary (Stratified):\n")
+Data Split Summary (Stratified):
+
+> cat("Train samples: ", nrow(x_train_raw), "\n")
+Train samples:  43267 
+
+> cat("Val samples:   ", nrow(x_val_raw), "\n")
+Val samples:    9274 
+
+> cat("Test samples:  ", nrow(x_test_raw), "\n")
+Test samples:   9276 
+
+> # 4. Preprocessing (Robust Scaling) --------------------------------------
+> # IMPORTANT: Fit scaler ONLY on Training data, apply to Val and Test
+>  .... [TRUNCATED] 
+
+> x_train <- predict(scaler, x_train_raw)
+
+> x_val   <- predict(scaler, x_val_raw)
+
+> # x_test  <- predict(scaler, x_test_raw) # Ready if needed for final eval
+> 
+> # 5. Define Model --------------------------------------------------- .... [TRUNCATED] 
+
+> # Optional: Layer 3
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(
++       units = FLAGS$units3, 
++       activation = 'relu',
+ .... [TRUNCATED] 
+
+> # Output Layer
+> model <- model %>% 
++   layer_dense(units = 7, activation = 'softmax')
+
+> # 6. Compile & Train -----------------------------------------------------
+> model %>% compile(
++   loss = 'categorical_crossentropy',
++   # SGD wit .... [TRUNCATED] 
+
+> lr_scheduler <- callback_reduce_lr_on_plateau(
++   monitor = "loss",        # Watch Training Loss (to fix underfitting)
++   factor = 0.5,            .... [TRUNCATED] 
+
+>   history <- model %>% fit(
++   x_train, y_train,
++   epochs = 5000,           # Your 5000 epoch goal
++   batch_size = 256,        # The recommended .... [TRUNCATED] 

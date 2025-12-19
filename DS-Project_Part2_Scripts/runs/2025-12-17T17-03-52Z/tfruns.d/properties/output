@@ -1,0 +1,104 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   flag_integer("units1", 128),
++   flag_integer("unit ..." ... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> # 3. Stratified Split Data (Original Distribution) -----------------------
+> set.seed(42)
+
+> y_factor <- as.factor(data[[target_col]])
+
+> # Create Test Set (15%)
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> # Create Validation Set (15% of total)
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(as.factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+> val_data <- remain_data[val_idx, ]
+
+> train_data_raw <- remain_data[-val_idx, ]
+
+> # --- 3.5 UNDERSAMPLING THE MAJORITY ---
+> # We ONLY undersample the training data. Validation and Test must remain realistic.
+> cat("Original Train ..." ... [TRUNCATED] 
+Original Training Distribution:
+
+> print(table(train_data_raw[[target_col]]))
+
+    0     1     2     3     4     5     6 
+ 1263 36488  4543   498   135    79   261 
+
+> # Strategy: Keep all minority samples, but cap the majority (Class 1 and 0)
+> # Adjust these numbers to control how aggressive the undersampling is
+ .... [TRUNCATED] 
+
+> train_data <- train_data_raw %>%
++   group_by(!!sym(target_col)) %>%
++   group_modify(~ {
++     if (nrow(.x) > max_samples_per_class) {
++       .x[s .... [TRUNCATED] 
+
+> cat("\nUndersampled Training Distribution:\n")
+
+Undersampled Training Distribution:
+
+> print(table(train_data[[target_col]]))
+
+   0    1    2    3    4    5    6 
+1000 1000 1000  498  135   79  261 
+
+> # Convert to matrices for Keras
+> x_train_raw <- as.matrix(train_data %>% select(-all_of(target_col)))
+
+> y_train     <- to_categorical(train_data[[target_col]], num_classes = 7)
+
+> x_val_raw   <- as.matrix(val_data %>% select(-all_of(target_col)))
+
+> y_val       <- to_categorical(val_data[[target_col]], num_classes = 7)
+
+> x_test_raw  <- as.matrix(test_data %>% select(-all_of(target_col)))
+
+> y_test      <- to_categorical(test_data[[target_col]], num_classes = 7)
+
+> # 4. Preprocessing (Robust Scaling) --------------------------------------
+> continuous_cols <- colnames(x_train_raw)[apply(x_train_raw, 2, function .... [TRUNCATED] 
+
+> scaler <- preProcess(x_train_raw[, continuous_cols], method = c("zv", "center", "scale"))
+
+> x_train <- x_train_raw
+
+> x_val   <- x_val_raw
+
+> x_test  <- x_test_raw
+
+> x_train[, continuous_cols] <- predict(scaler, x_train_raw[, continuous_cols])
+
+> x_val[, continuous_cols]   <- predict(scaler, x_val_raw[, continuous_cols])
+
+> x_test[, continuous_cols]  <- predict(scaler, x_test_raw[, continuous_cols])
+
+> # 5. Define Model --------------------------------------------------------
+> model <- keras_model_sequential() %>%
++   layer_input(input_shape = c(n .... [TRUNCATED] 

@@ -127,7 +127,7 @@ for(i in 1:k){
   
   # d. Compile (Standard)
   model %>% compile(
-    loss = 'categorical_crossentropy',
+    loss = loss_categorical_crossentropy(label_smoothing = 0.1),
     optimizer = optimizer_adam(learning_rate = FLAGS$learning_rate),
     metrics = c('accuracy')
   )
@@ -203,6 +203,6 @@ if(gap > 0.05) {
 list(
   val_loss = avg_val_loss,
   val_accuracy = avg_val_acc,
-  val_f1 = avg_val_f1,
-  val_bal_acc = avg_val_bal
+  val_f1 = avg_macro_f1,
+  val_bal_acc = avg_bal_acc
 )

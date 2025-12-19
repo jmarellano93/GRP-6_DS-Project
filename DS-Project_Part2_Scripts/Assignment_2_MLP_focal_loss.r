@@ -202,6 +202,6 @@ if(gap > 0.05) {
 list(
   val_loss = avg_val_loss,
   val_accuracy = avg_val_acc,
-  val_f1 = avg_val_f1,
-  val_bal_acc = avg_val_bal
+  val_f1 = avg_macro_f1,
+  val_bal_acc = avg_bal_acc
 )

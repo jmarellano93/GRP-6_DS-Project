@@ -1,0 +1,143 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags (Pure SGD setup) -------------------------------
+> FLAGS <- flags(
++   flag_integer("units1", 128),
++   flag_integer("unit ..." ... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> data <- read.csv(
++   "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> # 3. Stratified Split Data ----------------------------------------------
+> set.seed(42)
+
+> y_factor <- factor(data[[target_col]])
+
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> # 4. Prepare Matrices & Preprocessing ------------------------------------
+> x_train_raw <- as.matrix(mutate(train_data %>% select(-all_of(target_co .... [TRUNCATED] 
+
+> x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> storage.mode(x_train_raw) <- "double"
+
+> storage.mode(x_val_raw)   <- "double"
+
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 7)
+
+> y_val   <- to_categorical(val_data[[target_col]],   num_classes = 7)
+
+> continuous_cols <- colnames(x_train_raw)[apply(x_train_raw, 2, function(x) !all(x %in% c(0, 1)))]
+
+> scaler <- preProcess(x_train_raw[, continuous_cols, drop = FALSE], method = c("zv", "center", "scale"))
+
+> x_train <- x_train_raw
+
+> x_val   <- x_val_raw
+
+> x_train[, continuous_cols] <- predict(scaler, x_train_raw[, continuous_cols, drop = FALSE])
+
+> x_val[, continuous_cols]   <- predict(scaler, x_val_raw[, continuous_cols, drop = FALSE])
+
+> # 5. Define Model --------------------------------------------------------
+> model <- keras_model_sequential(input_shape = c(ncol(x_train))) %>%
++   .... [TRUNCATED] 
+
+> # 6. Compile & Train (Using Basic SGD) -----------------------------------
+> model %>% compile(
++   loss = "categorical_crossentropy",
++   optimizer .... [TRUNCATED] 
+
+> # Fit without weights or early stopping
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epochs,
++   batch_size = FLAGS$batch_si .... [TRUNCATED] 
+
+> # 7. Final Evaluation ----------------------------------------------------
+> val_probs <- model %>% predict(x_val, verbose = 0)
+
+> val_preds <- apply(val_probs, 1, which.max) - 1
+
+> val_true  <- apply(y_val, 1, which.max) - 1
+
+> cm <- confusionMatrix(factor(val_preds, levels = 0:6), factor(val_true, levels = 0:6), mode = "everything")
+
+> print(cm)
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    0    1    2    3    4    5    6
+         0  129   80   19    1    1    0    4
+         1  123 7327  398   44   10   11   27
+         2   17  330  543   10    1    0    5
+         3    0   46    6   49    1    0    0
+         4    0   12    2    3   17    2    0
+         5    1   12    1    0    0    4    0
+         6    1   12    5    0    0    0   20
+
+Overall Statistics
+                                         
+               Accuracy : 0.8722         
+                 95% CI : (0.8653, 0.879)
+    No Information Rate : 0.8431         
+    P-Value [Acc > NIR] : 1.366e-15      
+                                         
+                  Kappa : 0.5214         
+                                         
+ Mcnemar's Test P-Value : NA             
+
+Statistics by Class:
+
+                     Class: 0 Class: 1 Class: 2 Class: 3 Class: 4  Class: 5 Class: 6
+Sensitivity           0.47601   0.9371  0.55749 0.457944 0.566667 0.2352941 0.357143
+Specificity           0.98834   0.5787  0.95627 0.994218 0.997945 0.9984876 0.998047
+Pos Pred Value        0.55128   0.9228  0.59934 0.480392 0.472222 0.2222222 0.526316
+Neg Pred Value        0.98429   0.6312  0.94849 0.993676 0.998593 0.9985955 0.996102
+Precision             0.55128   0.9228  0.59934 0.480392 0.472222 0.2222222 0.526316
+Recall                0.47601   0.9371  0.55749 0.457944 0.566667 0.2352941 0.357143
+F1                    0.51089   0.9299  0.57766 0.468900 0.515152 0.2285714 0.425532
+Prevalence            0.02922   0.8431  0.10502 0.011538 0.003235 0.0018331 0.006038
+Detection Rate        0.01391   0.7901  0.05855 0.005284 0.001833 0.0004313 0.002157
+Detection Prevalence  0.02523   0.8562  0.09769 0.010998 0.003882 0.0019409 0.004097
+Balanced Accuracy     0.73218   0.7579  0.75688 0.726081 0.782306 0.6168909 0.677595
+
+> list(
++   val_accuracy = cm$overall["Accuracy"],
++   val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
++   val_bal_acc  = mean(cm$byClass[, "Ba ..." ... [TRUNCATED] 
+$val_accuracy
+ Accuracy 
+0.8722234 
+
+$val_f1
+[1] 0.5223695
+
+$val_bal_acc
+[1] 0.721402
+

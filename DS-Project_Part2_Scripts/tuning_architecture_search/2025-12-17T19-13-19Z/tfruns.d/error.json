@@ -1,0 +1,4 @@
+{
+  "message": "The following flags were provided but not declared: units3, dropout3",
+  "traceback": ["stop(\"The following flags were provided but not declared: \", \n    paste(undeclared, collapse = \", \"), call. = FALSE)", "parse_flags(FLAGS, config, file, arguments)", "flags(flag_integer(\"units1\", 128), flag_integer(\"units2\", 64), \n    flag_numeric(\"dropout1\", 0), flag_numeric(\"dropout2\", 0), \n    flag_numeric(\"learning_rate\", 0.01), flag_numeric(\"momentum\", \n        0.9), flag_integer(\"batch_size\", 64), flag_integer(\"epochs\", \n        5000))", "eval(ei, envir)", "eval(ei, envir)", "withVisible(eval(ei, envir))", "tuning_run(\"/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_revised.r\", \n    runs_dir = \"tuning_architecture_search\", flags = runs_grid, \n    sample = 1, echo = FALSE)"]
+}

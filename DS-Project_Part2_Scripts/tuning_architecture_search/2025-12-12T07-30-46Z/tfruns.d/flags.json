@@ -1,0 +1,11 @@
+{
+  "dropout1": 0.2,
+  "dropout2": 0.2,
+  "dropout3": 0,
+  "units1": 128,
+  "units2": 64,
+  "units3": 0,
+  "learning_rate": 0.001,
+  "batch_size": 128,
+  "epochs": 100
+}

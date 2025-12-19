@@ -1,0 +1,117 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   flag_integer("units1", 128),
++   flag_integer("unit ..." ... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> data <- read.csv(
++   "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS ..." ... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> # 3. Stratified Split Data (Original Distribution) -----------------------
+> set.seed(42)
+
+> y_factor <- factor(data[[target_col]])
+
+> # --- Test set (15%) ---
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> # --- Validation set (15% total) ---
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(
++   factor(remain_data[[target_col]]),
++   p = val_p,
++   list = FALSE
++ )
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> cat("Training distribution (original):\n")
+Training distribution (original):
+
+> print(table(train_data[[target_col]]))
+
+    0     1     2     3     4     5     6 
+ 1263 36488  4543   498   135    79   261 
+
+> # 4. Convert to numeric matrices ----------------------------------------
+> x_train_raw <- train_data %>%
++   select(-all_of(target_col)) %>%
++   mu .... [TRUNCATED] 
+
+> x_val_raw <- val_data %>%
++   select(-all_of(target_col)) %>%
++   mutate(across(everything(), as.numeric)) %>%
++   as.matrix()
+
+> x_test_raw <- test_data %>%
++   select(-all_of(target_col)) %>%
++   mutate(across(everything(), as.numeric)) %>%
++   as.matrix()
+
+> storage.mode(x_train_raw) <- "double"
+
+> storage.mode(x_val_raw)   <- "double"
+
+> storage.mode(x_test_raw)  <- "double"
+
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 7)
+
+> y_val   <- to_categorical(val_data[[target_col]],   num_classes = 7)
+
+> y_test  <- to_categorical(test_data[[target_col]],  num_classes = 7)
+
+> # 5. Preprocessing (z-score scaling for continuous features) ------------
+> continuous_cols <- colnames(x_train_raw)[
++   apply(x_train_raw, 2, func .... [TRUNCATED] 
+
+> scaler <- preProcess(
++   x_train_raw[, continuous_cols, drop = FALSE],
++   method = c("zv", "center", "scale")
++ )
+
+> x_train <- x_train_raw
+
+> x_val   <- x_val_raw
+
+> x_test  <- x_test_raw
+
+> x_train[, continuous_cols] <- predict(
++   scaler, x_train_raw[, continuous_cols, drop = FALSE]
++ )
+
+> x_val[, continuous_cols] <- predict(
++   scaler, x_val_raw[, continuous_cols, drop = FALSE]
++ )
+
+> x_test[, continuous_cols] <- predict(
++   scaler, x_test_raw[, continuous_cols, drop = FALSE]
++ )
+
+> # 6. Define Model --------------------------------------------------------
+> reg <- regularizer_l2(FLAGS$l2)
+
+> model <- keras_model_sequential() %>%
++   layer_input(shape = ncol(x_train)) %>%
++   layer_dense(
++     units = FLAGS$units1,
++     activation = "re ..." ... [TRUNCATED] 

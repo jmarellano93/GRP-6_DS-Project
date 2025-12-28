@@ -1,0 +1,173 @@
+# Assignment 2 MLP: Focal Loss + Train/Val/Test Split
+# Architecture: Batch Norm + ReLU + SGD + Variable Depth
+
+library(keras3)
+library(caret)
+library(dplyr)
+library(tfruns)
+library(tensorflow)
+
+# --- 0. DEFINE CUSTOM FOCAL LOSS FUNCTION -------------------------------
+focal_loss <- function(gamma = 2.0, alpha = 0.25) {
+  function(y_true, y_pred) {
+    # Ensure types match (float32 is standard for neural nets)
+    y_true <- tf$cast(y_true, tf$float32)
+    y_pred <- tf$cast(y_pred, tf$float32)
+    
+    # FIX: Hardcode epsilon to avoid 'could not find function k_epsilon'
+    epsilon <- 1e-7
+    
+    # Clip predictions to prevent Log(0) errors (NaN)
+    y_pred <- tf$clip_by_value(y_pred, epsilon, 1.0 - epsilon)
+    
+    # 1. Calculate Standard Cross Entropy components
+    # (Element-wise multiplication selects only the prob of the true class)
+    cross_entropy <- -y_true * tf$math$log(y_pred)
+    
+    # 2. Calculate Focal Scaling Factor: (1 - p)^gamma
+    # If model is sure (p near 1), (1-p) is near 0 -> Weight is 0 (loss ignored).
+    # If model is unsure (p near 0), (1-p) is near 1 -> Weight is 1 (loss active).
+    weight <- tf$math$pow(1.0 - y_pred, gamma)
+    
+    # 3. Apply Alpha (Balance) and Gamma (Focus)
+    loss <- alpha * weight * cross_entropy
+    
+    # Sum over classes to get total loss per sample
+    tf$reduce_sum(loss, axis = -1L)
+  }
+}
+# ------------------------------------------------------------------------
+
+# 1. Hyperparameter flags ------------------------------------------------
+FLAGS <- flags(
+  # Architecture
+  flag_integer("units1", 512),
+  flag_integer("units2", 256),
+  flag_integer("units3", 0),       # 0 = Disabled
+  
+  # Regularization
+  flag_numeric("dropout1", 0.5), 
+  flag_numeric("dropout2", 0.3),
+  flag_numeric("dropout3", 0.0),   
+  
+  # Optimization (SGD Settings)
+  flag_numeric("learning_rate", 0.0005), 
+  flag_numeric("momentum", 0.9),       
+  flag_integer("batch_size", 32),
+  flag_integer("epochs", 2500),    
+  flag_integer("patience", 200),
+  
+  # Focal Loss Parameters
+  flag_numeric("gamma", 2.0),      # Focusing parameter
+  flag_numeric("alpha", 0.25)      # Balancing parameter
+)
+
+# 2. Load & Prepare Data -------------------------------------------------
+data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/Assignment_2_cleaned.csv")
+target_col <- "target_class" 
+
+# 3. Stratified Split (Train / Val / Test) -------------------------------
+set.seed(42)
+y_factor <- factor(data[[target_col]])
+
+# Step A: Create Test Set (15%)
+test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+test_data <- data[test_idx, ]
+remain_data <- data[-test_idx, ]
+
+# Step B: Create Val Set from the remainder (15% of total ~ 17.6% of remain)
+val_p <- 0.15 / 0.85
+val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+val_data   <- remain_data[val_idx, ]
+train_data <- remain_data[-val_idx, ]
+
+# 4. Preprocessing (MinMax Scaling) --------------------------------------
+x_train_raw <- as.matrix(mutate(train_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+# Scale Features (Fit on Train, Apply to Train & Val)
+scaler <- preProcess(x_train_raw, method = c("zv", "range"))
+
+x_train <- predict(scaler, x_train_raw)
+x_val   <- predict(scaler, x_val_raw)
+
+# 5. Define Model (BN + ReLU + Dropout) ----------------------------------
+model <- keras_model_sequential() %>%
+  # Layer 1
+  layer_dense(units = FLAGS$units1, input_shape = c(ncol(x_train)), use_bias = FALSE) %>%
+  layer_batch_normalization() %>%  
+  layer_activation("relu") %>%
+  layer_dropout(FLAGS$dropout1) %>%
+  # Layer 2
+  layer_dense(units = FLAGS$units2, use_bias = FALSE) %>%
+  layer_batch_normalization() %>%
+  layer_activation("relu") %>%
+  layer_dropout(FLAGS$dropout2)
+
+# Layer 3 (Conditional)
+if (FLAGS$units3 > 0) {
+  model <- model %>%
+    layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
+    layer_batch_normalization() %>%
+    layer_activation("relu") %>%
+    layer_dropout(FLAGS$dropout3)
+}
+
+# Output Layer
+model <- model %>%
+  layer_dense(units = 8, activation = "softmax")
+
+# 6. Compile (SGD + Focal Loss) ------------------------------------------
+model %>% compile(
+  loss = focal_loss(gamma = FLAGS$gamma, alpha = FLAGS$alpha),
+  optimizer = optimizer_sgd(
+    learning_rate = FLAGS$learning_rate,
+    momentum = FLAGS$momentum,
+    nesterov = TRUE
+  ),
+  metrics = list("accuracy")
+)
+
+# 7. Train (Early Stopping) ----------------------------------------------
+history <- model %>% fit(
+  x_train, y_train,
+  epochs = FLAGS$epochs,
+  batch_size = FLAGS$batch_size,
+  validation_data = list(x_val, y_val),
+  verbose = 1,
+  callbacks = list(
+    callback_early_stopping(
+      monitor = "val_accuracy", 
+      patience = FLAGS$patience, 
+      restore_best_weights = TRUE,
+      verbose = 1
+    )
+  )
+)
+
+# 8. Evaluation ----------------------------------------------------------
+# Make predictions
+val_probs <- model %>% predict(x_val, verbose = 0)
+val_preds <- apply(val_probs, 1, which.max) - 1
+val_true  <- apply(y_val, 1, which.max) - 1
+
+# Generate Confusion Matrix
+cm <- confusionMatrix(
+  factor(val_preds, levels = 0:7), 
+  factor(val_true, levels = 0:7), 
+  mode = "everything"
+)
+
+print(cm)
+
+# Extract key metrics for report
+list(
+  val_accuracy = cm$overall["Accuracy"],
+  val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
+  val_bal_acc  = mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE),
+  epochs_run   = length(history$metrics$loss)
+)

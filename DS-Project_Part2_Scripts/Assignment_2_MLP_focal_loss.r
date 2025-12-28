@@ -1,16 +1,11 @@
-# ==============================================================================
-# STEP 2 (VARIANT D): FOCAL LOSS (CORRECTED)
-# 
-# CHANGE LOG:
-# 1. FIXED ERROR: Replaced 'k_epsilon()' with '1e-7' to fix RuntimeError.
-# 2. UPDATED MATH: Added 'alpha' weighting to the loss calculation.
-# ==============================================================================
+# Assignment 2 MLP: Focal Loss + Train/Val/Test Split
+# Architecture: Batch Norm + ReLU + SGD + Variable Depth
 
 library(keras3)
 library(caret)
 library(dplyr)
 library(tfruns)
-library(tensorflow) 
+library(tensorflow)
 
 # --- 0. DEFINE CUSTOM FOCAL LOSS FUNCTION -------------------------------
 focal_loss <- function(gamma = 2.0, alpha = 0.25) {
@@ -25,18 +20,19 @@ focal_loss <- function(gamma = 2.0, alpha = 0.25) {
     # Clip predictions to prevent Log(0) errors (NaN)
     y_pred <- tf$clip_by_value(y_pred, epsilon, 1.0 - epsilon)
     
-    # 1. Calculate Standard Cross Entropy
+    # 1. Calculate Standard Cross Entropy components
+    # (Element-wise multiplication selects only the prob of the true class)
     cross_entropy <- -y_true * tf$math$log(y_pred)
     
     # 2. Calculate Focal Scaling Factor: (1 - p)^gamma
-    # If model is sure (p near 1), this term becomes 0 (loss ignored).
-    # If model is unsure (p near 0), this term becomes 1 (loss active).
+    # If model is sure (p near 1), (1-p) is near 0 -> Weight is 0 (loss ignored).
+    # If model is unsure (p near 0), (1-p) is near 1 -> Weight is 1 (loss active).
     weight <- tf$math$pow(1.0 - y_pred, gamma)
     
     # 3. Apply Alpha (Balance) and Gamma (Focus)
     loss <- alpha * weight * cross_entropy
     
-    # Sum over classes
+    # Sum over classes to get total loss per sample
     tf$reduce_sum(loss, axis = -1L)
   }
 }
@@ -44,164 +40,134 @@ focal_loss <- function(gamma = 2.0, alpha = 0.25) {
 
 # 1. Hyperparameter flags ------------------------------------------------
 FLAGS <- flags(
-  # Regularization
-  flag_numeric("dropout1", 0),
-  flag_numeric("dropout2", 0),
-  flag_numeric("dropout3", 0.0),
-  
   # Architecture
-  flag_integer("units1", 256),
-  flag_integer("units2", 128),
-  flag_integer("units3", 64),
+  flag_integer("units1", 512),
+  flag_integer("units2", 256),
+  flag_integer("units3", 0),       # 0 = Disabled
   
-  # Optimization
-  flag_numeric("learning_rate", 0.001),
-  flag_integer("batch_size", 128),
-  flag_integer("epochs", 100)
+  # Regularization
+  flag_numeric("dropout1", 0), 
+  flag_numeric("dropout2", 0),
+  flag_numeric("dropout3", 0.0),   
+  
+  # Optimization (SGD Settings)
+  flag_numeric("learning_rate", 0.001), 
+  flag_numeric("momentum", 0.9),       
+  flag_integer("batch_size", 32),
+  flag_integer("epochs", 1000),    
+  flag_integer("patience", 200),
+  
+  # Focal Loss Parameters
+  flag_numeric("gamma", 2.0),      # Focusing parameter
+  flag_numeric("alpha", 0.25)      # Balancing parameter
 )
 
 # 2. Load & Prepare Data -------------------------------------------------
-# Ensure this path is correct
-data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/Assignment_2_cleaned.csv")
+# (Assuming 'data' is loaded in your environment)
 target_col <- "target_class" 
 
-x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
-y_all <- to_categorical(data[[target_col]], num_classes = 8)
-
-# 3. Split Data ----------------------------------------------------------
+# 3. Stratified Split (Train / Val / Test) -------------------------------
 set.seed(42)
+y_factor <- factor(data[[target_col]])
 
-n_rows <- nrow(x_all)
-test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+# Step A: Create Test Set (15%)
+test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+test_data <- data[test_idx, ]
+remain_data <- data[-test_idx, ]
 
-x_test_holdout_raw <- x_all[test_idx, ]
-y_test_holdout     <- y_all[test_idx, ]
+# Step B: Create Val Set from the remainder (15% of total ~ 17.6% of remain)
+val_p <- 0.15 / 0.85
+val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
 
-x_cv_raw <- x_all[-test_idx, ] 
-y_cv     <- y_all[-test_idx, ]
+val_data   <- remain_data[val_idx, ]
+train_data <- remain_data[-val_idx, ]
 
-# 4. Cross-Validation Setup ----------------------------------------------
-k <- 5
-folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+# 4. Preprocessing (MinMax Scaling) --------------------------------------
+x_train_raw <- as.matrix(mutate(train_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
 
-results <- data.frame(
-  Fold = integer(),
-  Train_Loss = numeric(),
-  Val_Loss = numeric(),
-  Train_Acc = numeric(),
-  Val_Acc = numeric(),
-  Val_Macro_F1 = numeric(),
-  Val_Bal_Acc = numeric()
+y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+# Scale Features (Fit on Train, Apply to Train & Val)
+scaler <- preProcess(x_train_raw, method = c("zv", "range"))
+
+x_train <- predict(scaler, x_train_raw)
+x_val   <- predict(scaler, x_val_raw)
+
+# 5. Define Model (BN + ReLU + Dropout) ----------------------------------
+model <- keras_model_sequential() %>%
+  # Layer 1
+  layer_dense(units = FLAGS$units1, input_shape = c(ncol(x_train)), use_bias = FALSE) %>%
+  layer_batch_normalization() %>%  
+  layer_activation("relu") %>%
+  layer_dropout(FLAGS$dropout1) %>%
+  # Layer 2
+  layer_dense(units = FLAGS$units2, use_bias = FALSE) %>%
+  layer_batch_normalization() %>%
+  layer_activation("relu") %>%
+  layer_dropout(FLAGS$dropout2)
+
+# Layer 3 (Conditional)
+if (FLAGS$units3 > 0) {
+  model <- model %>%
+    layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
+    layer_batch_normalization() %>%
+    layer_activation("relu") %>%
+    layer_dropout(FLAGS$dropout3)
+}
+
+# Output Layer
+model <- model %>%
+  layer_dense(units = 8, activation = "softmax")
+
+# 6. Compile (SGD + Focal Loss) ------------------------------------------
+model %>% compile(
+  loss = focal_loss(gamma = FLAGS$gamma, alpha = FLAGS$alpha),
+  optimizer = optimizer_sgd(
+    learning_rate = FLAGS$learning_rate,
+    momentum = FLAGS$momentum,
+    nesterov = TRUE
+  ),
+  metrics = list("accuracy")
 )
 
-cat("Starting", k, "-Fold Cross-Validation (With Focal Loss)...\n")
-
-# 5. Training Loop -------------------------------------------------------
-for(i in 1:k){
-  cat("\n--- Processing Fold #", i, "---\n")
-  
-  # a. Split
-  val_indices <- which(folds == i, arr.ind = TRUE)
-  x_fold_val_raw   <- x_cv_raw[val_indices, ]
-  y_fold_val       <- y_cv[val_indices, ]
-  x_fold_train_raw <- x_cv_raw[-val_indices, ]
-  y_fold_train     <- y_cv[-val_indices, ]
-  
-  # b. Robust Scaling
-  fold_scaler <- preProcess(x_fold_train_raw, method = c("zv", "center", "scale"))
-  x_fold_train <- predict(fold_scaler, x_fold_train_raw)
-  x_fold_val   <- predict(fold_scaler, x_fold_val_raw) 
-  
-  # c. Define Model
-  model <- keras_model_sequential(input_shape = c(ncol(x_fold_train))) %>%
-    layer_dense(units = FLAGS$units1, activation = 'relu') %>%
-    layer_dropout(rate = FLAGS$dropout1) %>%
-    layer_dense(units = FLAGS$units2, activation = 'relu') %>%
-    layer_dropout(rate = FLAGS$dropout2)
-  
-  if (FLAGS$units3 > 0) {
-    model <- model %>%
-      layer_dense(units = FLAGS$units3, activation = 'relu') %>%
-      layer_dropout(rate = FLAGS$dropout3)
-  }
-  
-  model <- model %>% layer_dense(units = 8, activation = 'softmax')
-  
-  # d. Compile (Using Fixed Focal Loss)
-  model %>% compile(
-    loss = focal_loss(gamma = 2.0, alpha = 0.25),
-    optimizer = optimizer_adam(learning_rate = FLAGS$learning_rate),
-    metrics = c('accuracy')
+# 7. Train (Early Stopping) ----------------------------------------------
+history <- model %>% fit(
+  x_train, y_train,
+  epochs = FLAGS$epochs,
+  batch_size = FLAGS$batch_size,
+  validation_data = list(x_val, y_val),
+  verbose = 0,
+  callbacks = list(
+    callback_early_stopping(
+      monitor = "val_accuracy", 
+      patience = FLAGS$patience, 
+      restore_best_weights = TRUE,
+      verbose = 1
+    )
   )
-  
-  # e. Train
-  history <- model %>% fit(
-    x_fold_train, y_fold_train,
-    batch_size = FLAGS$batch_size,
-    epochs = FLAGS$epochs,
-    verbose = 0,
-    validation_data = list(x_fold_val, y_fold_val)
-  )
-  
-  # f. Extract Metrics
-  best_epoch_idx <- which.max(history$metrics$val_accuracy)
-  best_val_acc   <- history$metrics$val_accuracy[best_epoch_idx]
-  best_train_acc <- history$metrics$accuracy[best_epoch_idx]
-  final_val_loss <- history$metrics$val_loss[best_epoch_idx]
-  final_train_loss <- history$metrics$loss[best_epoch_idx]
-  
-  val_probs <- model %>% predict(x_fold_val, verbose = 0)
-  val_preds <- apply(val_probs, 1, which.max) - 1
-  val_true  <- apply(y_fold_val, 1, which.max) - 1
-  
-  cm <- confusionMatrix(
-    factor(val_preds, levels = 0:7),
-    factor(val_true, levels = 0:7),
-    mode = "everything"
-  )
-  
-  macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
-  bal_acc  <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
-  
-  results[i, ] <- c(i, final_train_loss, final_val_loss, best_train_acc, 
-                    best_val_acc, macro_f1, bal_acc)
-  
-  cat(sprintf("Fold %d | Val Acc: %.4f | Macro F1: %.4f | Bal Acc: %.4f\n", 
-              i, best_val_acc, macro_f1, bal_acc))
-}
+)
 
-# 6. Final Report --------------------------------------------------------
-cat("\n========================================\n")
-cat("      ARCHITECTURE PERFORMANCE          \n")
-cat("      (WITH FOCAL LOSS GAMMA=2.0)       \n")
-cat("========================================\n")
+# 8. Evaluation ----------------------------------------------------------
+# Make predictions
+val_probs <- model %>% predict(x_val, verbose = 0)
+val_preds <- apply(val_probs, 1, which.max) - 1
+val_true  <- apply(y_val, 1, which.max) - 1
 
-avg_train_acc <- mean(results$Train_Acc)
-avg_val_acc   <- mean(results$Val_Acc)
-avg_macro_f1  <- mean(results$Val_Macro_F1)
-avg_bal_acc   <- mean(results$Val_Bal_Acc)
+# Generate Confusion Matrix
+cm <- confusionMatrix(
+  factor(val_preds, levels = 0:7), 
+  factor(val_true, levels = 0:7), 
+  mode = "everything"
+)
 
-gap <- avg_train_acc - avg_val_acc
+print(cm)
 
-cat("Avg Train Accuracy:   ", round(avg_train_acc, 4), "\n")
-cat("Avg Val Accuracy:     ", round(avg_val_acc, 4), "\n")
-cat("Avg Macro F1 Score:   ", round(avg_macro_f1, 4), " (KEY METRIC)\n")
-cat("Avg Balanced Acc:     ", round(avg_bal_acc, 4), "\n")
-cat("Overfitting Gap:      ", round(gap, 4), "\n")
-cat("----------------------------------------\n")
-
-if(gap > 0.05) {
-  cat("WARNING: High Overfitting. Focal Loss is working but model is memorizing.\n")
-} else if(avg_macro_f1 < 0.50) {
-  cat("WARNING: Focal Loss Failed. Return to Baseline (Step 1).\n")
-} else {
-  cat("STATUS: Good candidate architecture.\n")
-}
-
-# tfruns will create columns named 'metric_val_f1', 'metric_val_bal_acc', etc.
+# Extract key metrics for report
 list(
-  val_loss = avg_val_loss,
-  val_accuracy = avg_val_acc,
-  val_f1 = avg_macro_f1,
-  val_bal_acc = avg_bal_acc
+  val_accuracy = cm$overall["Accuracy"],
+  val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
+  val_bal_acc  = mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE),
+  epochs_run   = length(history$metrics$loss)
 )

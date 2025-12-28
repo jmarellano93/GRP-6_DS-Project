@@ -1,0 +1,159 @@
+
+> # Assignment 2 MLP: Focal Loss + Train/Val/Test Split
+> # Architecture: Batch Norm + ReLU + SGD + Variable Depth
+> 
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # --- 0. DEFINE CUSTOM FOCAL LOSS FUNCTION -------------------------------
+> focal_loss <- function(gamma = 2.0, alpha = 0.25) {
++   function(y_true .... [TRUNCATED] 
+
+> # ------------------------------------------------------------------------
+> 
+> # 1. Hyperparameter flags ------------------------------------------ .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> # (Assuming 'data' is loaded in your environment)
+> target_col <- "targ ..." ... [TRUNCATED] 
+
+> # 3. Stratified Split (Train / Val / Test) -------------------------------
+> set.seed(42)
+
+> y_factor <- factor(data[[target_col]])
+
+> # Step A: Create Test Set (15%)
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> # Step B: Create Val Set from the remainder (15% of total ~ 17.6% of remain)
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> # 4. Preprocessing (MinMax Scaling) --------------------------------------
+> x_train_raw <- as.matrix(mutate(train_data %>% select(-all_of(target_co .... [TRUNCATED] 
+
+> x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+
+> y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+> # Scale Features (Fit on Train, Apply to Train & Val)
+> scaler <- preProcess(x_train_raw, method = c("zv", "range"))
+
+> x_train <- predict(scaler, x_train_raw)
+
+> x_val   <- predict(scaler, x_val_raw)
+
+> # 5. Define Model (BN + ReLU + Dropout) ----------------------------------
+> model <- keras_model_sequential() %>%
++   # Layer 1
++   layer_dense(uni .... [TRUNCATED] 
+
+> # Layer 3 (Conditional)
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
++     layer_b .... [TRUNCATED] 
+
+> # Output Layer
+> model <- model %>%
++   layer_dense(units = 8, activation = "softmax")
+
+> # 6. Compile (SGD + Focal Loss) ------------------------------------------
+> model %>% compile(
++   loss = focal_loss(gamma = FLAGS$gamma, alpha = F .... [TRUNCATED] 
+
+> # 7. Train (Early Stopping) ----------------------------------------------
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epoc .... [TRUNCATED] 
+
+> # 8. Evaluation ----------------------------------------------------------
+> # Make predictions
+> val_probs <- model %>% predict(x_val, verbose = 0)
+
+> val_preds <- apply(val_probs, 1, which.max) - 1
+
+> val_true  <- apply(y_val, 1, which.max) - 1
+
+> # Generate Confusion Matrix
+> cm <- confusionMatrix(
++   factor(val_preds, levels = 0:7), 
++   factor(val_true, levels = 0:7), 
++   mode = "everythi ..." ... [TRUNCATED] 
+
+> print(cm)
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    0    1    2    3    4    5    6    7
+         0  515   17  166   28    3    1    0    5
+         1   11  134   53   10    2    0    0    1
+         2  311  104 7369  370   33   11   10   17
+         3   24   11  179  563    5    2    0    2
+         4    6    2   26    1   60    0    1    0
+         5    0    0    5    0    0   15    0    0
+         6    0    1    4    1    0    0    6    0
+         7    0    1    5    0    0    0    0   30
+
+Overall Statistics
+                                          
+               Accuracy : 0.8588          
+                 95% CI : (0.8519, 0.8655)
+    No Information Rate : 0.7714          
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.6065          
+                                          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: 0 Class: 1 Class: 2 Class: 3 Class: 4 Class: 5  Class: 6 Class: 7
+Sensitivity           0.59400  0.49630   0.9439  0.57862 0.582524 0.517241 0.3529412 0.545455
+Specificity           0.97623  0.99218   0.6301  0.97562 0.996406 0.999505 0.9994062 0.999404
+Pos Pred Value        0.70068  0.63507   0.8959  0.71628 0.625000 0.750000 0.5000000 0.833333
+Neg Pred Value        0.96250  0.98628   0.7690  0.95608 0.995711 0.998614 0.9989119 0.997521
+Precision             0.70068  0.63507   0.8959  0.71628 0.625000 0.750000 0.5000000 0.833333
+Recall                0.59400  0.49630   0.9439  0.57862 0.582524 0.517241 0.3529412 0.545455
+F1                    0.64295  0.55717   0.9193  0.64014 0.603015 0.612245 0.4137931 0.659341
+Prevalence            0.08566  0.02668   0.7714  0.09614 0.010177 0.002865 0.0016797 0.005434
+Detection Rate        0.05088  0.01324   0.7281  0.05563 0.005928 0.001482 0.0005928 0.002964
+Detection Prevalence  0.07262  0.02085   0.8127  0.07766 0.009485 0.001976 0.0011857 0.003557
+Balanced Accuracy     0.78511  0.74424   0.7870  0.77712 0.789465 0.758373 0.6761737 0.772429
+
+> # Extract key metrics for report
+> list(
++   val_accuracy = cm$overall["Accuracy"],
++   val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
++   v .... [TRUNCATED] 
+$val_accuracy
+ Accuracy 
+0.8588084 
+
+$val_f1
+[1] 0.6309919
+
+$val_bal_acc
+[1] 0.7612382
+
+$epochs_run
+[1] 1000
+

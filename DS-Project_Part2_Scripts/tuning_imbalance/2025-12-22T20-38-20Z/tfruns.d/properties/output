@@ -1,0 +1,184 @@
+
+> # Assignment 2 MLP: Class Weighting + Train/Val/Test Split
+> # Architecture: Batch Norm + ReLU + SGD + Variable Depth
+> 
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Architecture
++   flag_integer("units1", 512),
++   .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> # (Assuming 'data' is loaded in your environment)
+> target_col <- "targ ..." ... [TRUNCATED] 
+
+> # 3. Stratified Split (Train / Val / Test) -------------------------------
+> set.seed(42)
+
+> y_factor <- factor(data[[target_col]])
+
+> # Step A: Create Test Set (15%)
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> # Step B: Create Val Set from the remainder (15% of total ~ 17.6% of remain)
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> # 4. Preprocessing (MinMax Scaling) --------------------------------------
+> # Extract X matrices
+> x_train_raw <- as.matrix(mutate(train_data %>% s .... [TRUNCATED] 
+
+> x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> # Prepare One-Hot Targets
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+
+> y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+> # Scale Features (Fit on Train, Apply to Train & Val)
+> # "zv" removes zero variance, "range" scales to 0-1
+> scaler <- preProcess(x_train_raw, meth .... [TRUNCATED] 
+
+> x_train <- predict(scaler, x_train_raw)
+
+> x_val   <- predict(scaler, x_val_raw)
+
+> # 5. Calculate Class Weights (On Train Set Only) -------------------------
+> # Convert One-Hot back to integer class labels (0-7) for counting
+> y_t .... [TRUNCATED] 
+
+> # Count frequencies
+> counts <- table(factor(y_train_integers, levels = 0:7))
+
+> # Calculate Weights: Total / (n_classes * count)
+> n_classes <- 8
+
+> total_samples <- sum(counts)
+
+> weights_vec <- total_samples / (n_classes * (counts + 1e-7)) # epsilon for safety
+
+> class_weights_list <- as.list(weights_vec)
+
+> names(class_weights_list) <- 0:7
+
+> cat("Class Weights applied:\n")
+Class Weights applied:
+
+> print(unlist(class_weights_list))
+         0          1          2          3          4          5          6          7 
+ 1.4589617  4.6837302  0.1620045  1.3013230 12.2947917 44.3721804 74.7025316 23.4186508 
+
+> # 6. Define Model (BN + ReLU + Dropout) ----------------------------------
+> model <- keras_model_sequential() %>%
++   # Layer 1
++   layer_dense(uni .... [TRUNCATED] 
+
+> # Layer 3 (Conditional)
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
++     layer_b .... [TRUNCATED] 
+
+> # Output Layer
+> model <- model %>%
++   layer_dense(units = 8, activation = "softmax")
+
+> # 7. Compile (SGD with Momentum) -----------------------------------------
+> model %>% compile(
++   loss = "categorical_crossentropy",
++   optimizer .... [TRUNCATED] 
+
+> # 8. Train (Early Stopping + Class Weights) ------------------------------
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epoc .... [TRUNCATED] 
+
+> # 9. Evaluation ----------------------------------------------------------
+> # Make predictions
+> val_probs <- model %>% predict(x_val, verbose = 0)
+
+> val_preds <- apply(val_probs, 1, which.max) - 1
+
+> val_true  <- apply(y_val, 1, which.max) - 1
+
+> # Generate Confusion Matrix
+> cm <- confusionMatrix(
++   factor(val_preds, levels = 0:7), 
++   factor(val_true, levels = 0:7), 
++   mode = "everythi ..." ... [TRUNCATED] 
+
+> print(cm)
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    0    1    2    3    4    5    6    7
+         0  578   13  356   36    2    1    0    4
+         1   26  177  246   17    4    0    1    2
+         2  198   57 6382  226   26    8    4   11
+         3   49   15  525  680    5    3    1    4
+         4    8    5  117    5   65    0    0    0
+         5    2    2   45    1    0   17    0    0
+         6    3    0   46    2    0    0   11    0
+         7    3    1   90    6    1    0    0   34
+
+Overall Statistics
+                                          
+               Accuracy : 0.7849          
+                 95% CI : (0.7768, 0.7929)
+    No Information Rate : 0.7714          
+    P-Value [Acc > NIR] : 0.0005735       
+                                          
+                  Kappa : 0.5232          
+                                          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: 0 Class: 1 Class: 2 Class: 3 Class: 4 Class: 5 Class: 6 Class: 7
+Sensitivity           0.66667  0.65556   0.8175  0.69887 0.631068 0.586207 0.647059 0.618182
+Specificity           0.95548  0.96995   0.7710  0.93419 0.986524 0.995046 0.994952 0.989966
+Pos Pred Value        0.58384  0.37421   0.9233  0.53042 0.325000 0.253731 0.177419 0.251852
+Neg Pred Value        0.96835  0.99036   0.5559  0.96685 0.996170 0.998806 0.999404 0.997897
+Precision             0.58384  0.37421   0.9233  0.53042 0.325000 0.253731 0.177419 0.251852
+Recall                0.66667  0.65556   0.8175  0.69887 0.631068 0.586207 0.647059 0.618182
+F1                    0.62251  0.47645   0.8672  0.60310 0.429043 0.354167 0.278481 0.357895
+Prevalence            0.08566  0.02668   0.7714  0.09614 0.010177 0.002865 0.001680 0.005434
+Detection Rate        0.05711  0.01749   0.6306  0.06719 0.006422 0.001680 0.001087 0.003359
+Detection Prevalence  0.09782  0.04673   0.6829  0.12667 0.019761 0.006620 0.006126 0.013339
+Balanced Accuracy     0.81107  0.81275   0.7942  0.81653 0.808796 0.790626 0.821006 0.804074
+
+> # Extract key metrics for report
+> list(
++   val_accuracy = cm$overall["Accuracy"],
++   val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
++   v .... [TRUNCATED] 
+$val_accuracy
+ Accuracy 
+0.7849027 
+
+$val_f1
+[1] 0.498603
+
+$val_bal_acc
+[1] 0.8073844
+
+$epochs_run
+[1] 954
+

@@ -1,0 +1,155 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   flag_integer("units1", 512),
++   flag_integer("unit ..." ... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> # (Assuming 'data' is loaded in your environment)
+> target_col <- "targ ..." ... [TRUNCATED] 
+
+> # 3. Stratified Split ----------------------------------------------------
+> set.seed(42)
+
+> y_factor <- factor(data[[target_col]])
+
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> # 4. Preprocessing -------------------------------------------------------
+> x_train_raw <- as.matrix(mutate(train_data %>% select(-all_of(target_co .... [TRUNCATED] 
+
+> x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> storage.mode(x_train_raw) <- "double"
+
+> storage.mode(x_val_raw)   <- "double"
+
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+
+> y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+> continuous_cols <- colnames(x_train_raw)[apply(x_train_raw, 2, function(x) !all(x %in% c(0, 1)))]
+
+> scaler <- preProcess(x_train_raw[, continuous_cols, drop = FALSE], method = c("zv", "range"))
+
+> x_train <- x_train_raw
+
+> x_val   <- x_val_raw
+
+> x_train[, continuous_cols] <- predict(scaler, x_train_raw[, continuous_cols, drop = FALSE])
+
+> x_val[, continuous_cols]   <- predict(scaler, x_val_raw[, continuous_cols, drop = FALSE])
+
+> # 5. Define Model --------------------------------------------------------
+> model <- keras_model_sequential() %>%
++   # Layer 1
++   layer_dense(uni .... [TRUNCATED] 
+
+> # Layer 3 (Conditional)
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
++     layer_b .... [TRUNCATED] 
+
+> # Output Layer
+> model <- model %>%
++   layer_dense(units = 8, activation = "softmax")
+
+> # 6. Compile -------------------------------------------------------------
+> model %>% compile(
++   loss = "categorical_crossentropy",
++   optimizer .... [TRUNCATED] 
+
+> # 7. Train with Early Stopping -------------------------------------------
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epoc .... [TRUNCATED] 
+
+> # 8. Evaluation ----------------------------------------------------------
+> # Because we used restore_best_weights=TRUE, this evaluation uses the B .... [TRUNCATED] 
+
+> val_preds <- apply(val_probs, 1, which.max) - 1
+
+> val_true  <- apply(y_val, 1, which.max) - 1
+
+> cm <- confusionMatrix(factor(val_preds, levels = 0:7), factor(val_true, levels = 0:7), mode = "everything")
+
+> print(cm)
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    0    1    2    3    4    5    6    7
+         0  540   15  190   47    2    1    1    2
+         1    9  125   46    9    3    0    1    2
+         2  270  108 7365  347   35   13    3   19
+         3   40   20  165  558    3    1    1    2
+         4    5    1   19    6   60    0    0    0
+         5    1    1    2    0    0   14    0    2
+         6    0    0    8    2    0    0    9    0
+         7    2    0   11    4    0    0    2   28
+
+Overall Statistics
+                                          
+               Accuracy : 0.8596          
+                 95% CI : (0.8527, 0.8663)
+    No Information Rate : 0.7713          
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.6133          
+                                          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: 0 Class: 1 Class: 2 Class: 3 Class: 4 Class: 5  Class: 6 Class: 7
+Sensitivity           0.62284  0.46296   0.9435  0.57348 0.582524 0.482759 0.5294118 0.509091
+Specificity           0.97212  0.99289   0.6564  0.97464 0.996905 0.999405 0.9990102 0.998112
+Pos Pred Value        0.67669  0.64103   0.9026  0.70633 0.659341 0.700000 0.4736842 0.595745
+Neg Pred Value        0.96492  0.98539   0.7750  0.95552 0.995712 0.998515 0.9992080 0.997320
+Precision             0.67669  0.64103   0.9026  0.70633 0.659341 0.700000 0.4736842 0.595745
+Recall                0.62284  0.46296   0.9435  0.57348 0.582524 0.482759 0.5294118 0.509091
+F1                    0.64865  0.53763   0.9226  0.63301 0.618557 0.571429 0.5000000 0.549020
+Prevalence            0.08567  0.02668   0.7713  0.09615 0.010178 0.002866 0.0016798 0.005435
+Detection Rate        0.05336  0.01235   0.7278  0.05514 0.005929 0.001383 0.0008893 0.002767
+Detection Prevalence  0.07885  0.01927   0.8063  0.07806 0.008992 0.001976 0.0018775 0.004644
+Balanced Accuracy     0.79748  0.72793   0.8000  0.77406 0.789715 0.741082 0.7642110 0.753602
+
+> list(
++   val_accuracy = cm$overall["Accuracy"],
++   val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
++   val_bal_acc  = mean(cm$byClass[, "Ba ..." ... [TRUNCATED] 
+$val_accuracy
+Accuracy 
+0.859585 
+
+$val_f1
+[1] 0.6226107
+
+$val_bal_acc
+[1] 0.7685059
+
+$epochs_trained
+[1] 235
+

@@ -1,0 +1,967 @@
+---
+title: "Assignment_2_Documentation"
+output: pdf_document
+date: "2025-12-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Abstract
+
+# Introduction
+
+The goal of this assignment was to build a neural network to predict the pay-back behavior of a new customer. The prediction of this behavior is categorical in nature, having 8 different possible levels:
+
+-   no loan for the month
+
+-   paid of that month
+
+-   1-29 days past due
+
+-   30-59 days past due
+
+-   60-89 days overdue
+
+-   90-119 days overdue
+
+-   120-149 days overdue
+
+-   Overdue or bad debts, write-offs for more than 150 days.
+
+The method to be used is a neural network, a supervised non-parametric learning method. Supervised learning means that the data is labeled. A non-parametric method is a statistical technique that does not assume the data follows a specific probability distribution (like the "bell curve" or normal distribution), but instead relies on the data's rank or order to draw conclusions.
+
+The data is an adjusted form of an open source kaggle-dataset, provided by the lecturers. No extra data was used to enhance this dataset.
+
+# Workflow
+
+In a data science project, adhering to a structured workflow is critical. Before starting the project, a GitHub repository was initialized to ensure reproducibility and, most importantly, to maintain a transparent history of all changes and experiments.
+
+Furthermore, a virtual environment was established to manage dependencies and ensure software consistency across different machines.
+
+## Preprocessing (Data Cleaning)
+
+This is the most time-consuming phase of a data science project. Raw data is rarely ready for modeling immediately, and thorough cleaning is essential to ensure high-quality output. If noisy or poor-quality data is fed into a model, the outcome will inevitably be of low value (a concept known as "Garbage in, Garbage out").
+
+Preprocessing entails handling missing values, correcting inconsistencies, removing duplicate entries, formatting data types, and splitting the data into training, validation, and testing sets to prevent data leakage.
+
+## Exploratory Data Analysis (EDA)
+
+Before building a model, the data scientist must understand the data's behavior. This is achieved through visualization methods, statistical checks, and outlier detection. Findings in this phase often lead to a subsequent round of preprocessing. Consequently, the workflow frequently becomes an iterative back-and-forth between EDA and preprocessing, consuming the majority of the project's time.
+
+## Feature Engineering
+
+In this phase, domain knowledge is typically applied to maximize model performance. Although the team's background in life sciences meant limited prior exposure to specific business domain cases, general data transformation principles were effectively applied. The goal is to transform the data to make it easier for the machine learning algorithm to interpret patterns. Depending on the model's initial performance, new features or different transformations are often introduced to optimize results based on emerging findings.
+
+## Model Selection and Training
+
+For this project, the model type was predefined as a neural network. However, critical decisions remained regarding the specific architecture (e.g., MLP, CNN, RNN) and hyperparameter configuration. The process begins with a baseline model—a simple architecture used to establish a performance benchmark. By testing different architectures and tuning hyperparameters, one attempts to optimize the applicable evaluation metrics. Crucially, this optimization process relies exclusively on the training and validation sets created during preprocessing.
+
+## Evaluation
+
+Finally, the model's performance is assessed using metrics relevant to the problem—specifically loss and accuracy, as defined by the project requirements. This assessment is conducted using the test data set, which was set aside at the beginning of the workflow to ensure an unbiased evaluation of the model's generalization capability.
+
+```{r}
+# Set personal working directory 
+# Change directory as needed
+#setwd("~/Documents/Repos/GRP-6_DS-Project")
+#renv::activate()
+```
+
+# Preprocessing and EDA
+
+In this chapter, the preprocessing pipeline is documented step-by-step. Crucially, this section reflects the iterative nature of the project. It details not only the final code but also the initial attempts that were later discarded or refined due to poor model accuracy.
+
+```{r, eval = FALSE}
+# Load necessary libraries
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(fastDummies)
+library(Hmisc)
+library(corrplot)
+library(tfruns)
+library(tictoc)
+library(beepr)
+library(keras3)
+```
+
+## Data Import and Initial Inspection
+
+The first thing we do is load the csv into a dataframe and inspect the amount of rows and columns, as well as the datatypes needed for each column.
+
+```{r}
+# Load the dataset
+path <- "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Dataset-part-2.csv"
+original <- read.csv(path)
+
+# Display the dimensions of the dataset
+dim(original)
+cat("Number of rows:", nrow(original), "\n")
+cat("Number of columns:", ncol(original), "\n")
+
+# Display the structure of the dataset
+str(original)
+
+# Display the first few rows of the dataset
+head(original)
+```
+
+The dataset has an initial of 67'614 rows and 19 columns (18 features and 1 label). We reload the dataset with the correct datatypes using the knowledge on the columns found on kaggle. It is crucial to load datatypes like ID as a string since sometimes the programm would change the value due to its formatting.
+
+Flag columns are changed to integers with TRUE being 1 and FALSE being 0.
+
+```{r}
+# 1. Define Data Types (The 'dtype dictionary' equivalent in R)
+col_types <- c(
+  ID = "character",                  # Prevent ID from being parsed as math number
+  CODE_GENDER = "factor",
+  FLAG_OWN_CAR = "character",        
+  FLAG_OWN_REALTY = "character",     
+  CNT_CHILDREN = "integer",
+  AMT_INCOME_TOTAL = "numeric",
+  NAME_INCOME_TYPE = "character",
+  NAME_EDUCATION_TYPE = "factor",
+  NAME_FAMILY_STATUS = "factor",
+  NAME_HOUSING_TYPE = "factor",
+  DAYS_BIRTH = "integer",
+  DAYS_EMPLOYED = "integer",
+  FLAG_MOBIL = "integer",            
+  FLAG_WORK_PHONE = "integer",
+  FLAG_PHONE = "integer",
+  FLAG_EMAIL = "integer",
+  OCCUPATION_TYPE = "factor",        
+  CNT_FAM_MEMBERS = "integer",
+  status = "factor"
+)
+
+# 2. Reload the CSV with strict types
+# na.strings includes empty strings to catch missing values in factors
+data <- read.csv(path, colClasses = col_types, na.strings = c("NA", ""))
+
+# 3. Post-Load Logic (Conversions that cannot be done directly in read.csv)
+# Manually convert "Y" to 1 and "N" to 0
+data$FLAG_OWN_CAR <- ifelse(data$FLAG_OWN_CAR == "Y", 1, 0)
+data$FLAG_OWN_REALTY <- ifelse(data$FLAG_OWN_REALTY == "Y", 1, 0)
+
+# (Optional) Verify that all flags are now technically integers
+flags_list <- c("FLAG_MOBIL", "FLAG_WORK_PHONE", "FLAG_PHONE", "FLAG_EMAIL", "FLAG_OWN_CAR", "FLAG_OWN_REALTY")
+
+# Force them all to be integers to be safe
+data[flags_list] <- lapply(data[flags_list], as.integer)
+
+str(data)
+```
+
+After each transformation a visual check using str(data) is used to check whether changes have been done as wished.
+
+Next, we check for duplicated rows or rows with the same ID
+
+```{r}
+# Check for duplicated rows
+duplicated_rows <- data[duplicated(data),]
+cat("Number of duplicated rows:", nrow(duplicated_rows), "\n") # 0
+
+# Check for duplicated IDs
+duplicated_ids <- data[duplicated(data$ID),]
+cat("Number of duplicated IDs:", nrow(duplicated_ids), "\n") # 0
+
+# Check for duplicated rows when excluding ID-column
+duplicates_mask <- duplicated(data[, !names(data) %in% "ID"])
+
+# Count the number of duplicates
+num_duplicates <- sum(duplicates_mask)
+
+cat("Number of duplicate rows (excluding ID):", num_duplicates, "\n")
+cat("Percentage of total dataset:", round((num_duplicates / nrow(data)) * 100, 2), "%\n")
+```
+
+Since ID is an identifier of a customer, it will not be fed into the model. Furthermore, it is highly unlikely that two distinct people have the same age, years worked, etc. We find 23 rows with similar information (excluding the ID), which can be dropped.
+
+```{r}
+# Optional: Remove the duplicates found above
+data <- data[!duplicates_mask, ]
+```
+
+## Data summary
+
+Now we can check the summary of all columns to identify missing values and get an overview of the data.
+
+```{r}
+# Summary of the dataset
+summary(data)
+```
+
+The`summary()`function acts as a critical diagnostic tool in the early stages of preprocessing by providing a five-number summary for numerical variables and data type information for categorical ones. This quick overview helps identify scale differences between variables, such as the vast difference between`CNT_CHILDREN`and`AMT_INCOME_TOTAL`, which indicates a need for normalization. Furthermore, it allows for the immediate detection of outliers or physically impossible values, as well as the identification of constant variables with zero variance that add no predictive value to the model.
+
+**Observations from Output:** The summary output reveals several critical data quality issues that require handling. Most notably,`DAYS_EMPLOYED` contains a significant artifact with a maximum value of 365'243, which is roughly 1,000 years. This is likely a placeholder for pensioners or unemployed individuals and severely skews the mean compared to the median, requiring correction before training. Additionally,`FLAG_MOBIL`shows a minimum, mean, and maximum of 1, indicating that every row contains the same value; this feature offers no discriminative information and should be removed. It is also observed that `DAYS_BIRTH` and `DAYS_EMPLOYED` are recorded as negative values, which should be converted to positive figures for better interpretability. Finally, many categorical variables like `CODE_GENDER` and `NAME_EDUCATION_TYPE` are currently stored as characters and must be converted to factors to properly utilize them in the modeling phase.
+
+## Univariate columns
+
+As we already seen in the summary(), FLAG_MOBIL shows a mean, minimum and max of 1, indicating that there is only one value present. We check this with the table() function. We do this simultaneously for the other FLAG-columns to see whether there is a strong imbalance in the column.
+
+```{r}
+unique(data$FLAG_OWN_CAR)
+unique(data$FLAG_OWN_REALTY)
+table(data$FLAG_OWN_CAR) 
+table(data$FLAG_OWN_REALTY) 
+table(data$FLAG_MOBIL) # Only True
+table(data$FLAG_WORK_PHONE)
+table(data$FLAG_PHONE)
+table(data$FLAG_EMAIL)
+```
+
+```{r}
+# Drop columns with no variance
+data <- data %>%
+  select(-FLAG_MOBIL)
+```
+
+The column FLAG_MOBIL is redundant since it only has one distinct value and can therefore be dropped.
+
+## Analysis of days_of_birth and days_employed
+
+Both of these columns show in the summary negative values. In the datadictionary we learn that DAYS_BIRTH is the age of the customer. It is a backwards count from the current day (0) where -1 would mean yesterday. DAYS_EMPLOYED is the start date of employment, it holds the same logic as DAYS_BIRTH. If the value is positive, it means that the person is currently unemployed.
+
+```{r}
+# Histogram of DAYS_BIRTH
+hist(data$DAYS_BIRTH, 
+     main="Histogram of DAYS_BIRTH", 
+     xlab="DAYS_BIRTH", 
+     col="lightblue")
+
+# Using the summary we can see the distribution of the data
+summary(data$DAYS_BIRTH)
+```
+
+On the first glance we do not see any outliers. However, we can see that the age is displayed as a negative value. We correct this by dividing by 365 and taking the absolute value. This computes the age in years, which is easier to understand whether or not the data makes sense. Furthermore, we will compute rounded numbers. The model most likely won't benefit from a day-level precision, furthermore most financial relationships are tied to age ranges, which is why this method is sufficient.
+
+```{r}
+# Correct DAYS_BIRTH to positive years
+data <- data %>%
+  mutate(AGE = round(abs(DAYS_BIRTH) / 365.25)) %>%
+  select(-DAYS_BIRTH)
+# Histogram of AGE_YEARS
+hist(data$AGE, 
+     main="Histogram of AGE", 
+     xlab="AGE (years)", 
+     col="lightgreen")
+
+# Using the summary we can see the distribution of the data
+summary(data$AGE)
+```
+
+The second strange column is 'DAYS_UNEMPLOYED'. We will make a histogram to understand the distribution.
+
+```{r}
+# Histogram of DAYS_EMPLOYED
+hist(data$DAYS_EMPLOYED, 
+     main="Histogram of DAYS_EMPLOYED", 
+     xlab="DAYS_EMPLOYED", 
+     col="lightblue")
+
+# Using the summary we can see the distribution of the data
+summary(data$DAYS_EMPLOYED)
+```
+
+We know that the unemployed have the sentinel value of 365'243. We therefore would expect the same amount of NA-values in OCCUPATION_TYPE.
+
+```{r}
+# Number of rows where days_employed == 365243
+print(nrow(data[data$DAYS_EMPLOYED == 365243, ])) # 11'855 rows
+
+# Look for occupation type where days_employed is 365243
+unique(data$OCCUPATION_TYPE[data$DAYS_EMPLOYED == 365243]) # They are ALL NA meaning that they do not work
+
+# Count how many rows have NA in occupation type
+nrow(data[is.na(data$OCCUPATION_TYPE), ]) # 20'699 rows --> not all are pensioned
+
+# Show name_income_type where there is an NA in occupation type
+table(data$NAME_INCOME_TYPE[is.na(data$OCCUPATION_TYPE)]) 
+
+# Show all occupation_type where name_income_type is Pensioner
+table(data$OCCUPATION_TYPE[data$NAME_INCOME_TYPE == 'Pensioner'])
+
+# Show the amount of name_income_type where days_employed is 365243
+table(data$NAME_INCOME_TYPE[data$DAYS_EMPLOYED == 365243])
+
+# Total amount of pensioners in the dataset
+table(data$NAME_INCOME_TYPE == 'Pensioner')
+```
+
+We see that there are 11'855 rows with positive values, indicating 11'855 unemployed which happen all to be pensioners. Looking at the OCCUPATION_TYPE we can see that those with the sentinel value have an NA-value in OCCUPATION_TYPE as well.
+
+-   Sentinel Group (11'855 rows)
+
+    -   There are exactly 11'855 rows where DAYS_EMPLOYED is 365'243.
+
+    -   Every single one of these rows has NAME_INCOME_TYPE as 'Pensioner'.
+
+    -   Every single one of these rows has OCCUPATION_TYPE as NA.
+
+    -   These represent the 'standard' retirees in the dataset.
+
+-   Missing Occupation Group (20'694 rows)
+
+    -   There are 20'694 rows total where OCCUPATION_TYE is NA.
+
+    -   11'877 of these are Pensioners. This is slightly higher than the 11'855 sentinel count, implying that 22 pensioners have valid days but no job title.
+
+    -   The remaining 8'817 rows are active workers who simply did not fill in their specific job title.
+
+-   Hidden subgroup (127 rows)
+
+    -   Total Pensioners (11'982) - Sentinel Pensioners (11'855) = 127 cases..
+
+    -   These rows are labeled 'Pensioner' but have valid employment days and often specific job titles.
+
+These inconsistencies necessitate further investigation into their age and employment history to determine if they are valid 'working retirees' or data entry errors.
+
+NOTE: In the first 2 iterations of this sentinel value these specific findings were not identified. In the first iteration all NA-values in OCCUPATION_TYPE were changed to 'Unknown' and a Flag was made for those who were retired. In a second iteration the flag was dropped due to it's redundancy and the rows were imputed with 'Retired' instead of 'Unknown' where applicable. Due to a final data check and mediocre accuracy in the trained model, these new findings were identified.
+
+```{r}
+# 1. Prepare the specific subgroup data
+working_pensioners_data <- data %>%
+  filter(NAME_INCOME_TYPE == "Pensioner", DAYS_EMPLOYED != 365243) %>%
+  mutate(
+    EXPERIENCE_YEARS = abs(DAYS_EMPLOYED) / 365.25
+  )
+
+# Boxplot of Age for Working Pensioners specifically
+# To see if they are actually 'Old' or if they are younger people on disability pension
+working_pensioners <- working_pensioners_data %>% filter(NAME_INCOME_TYPE == 'Pensioner')
+
+ggplot(working_pensioners, aes(x = NAME_INCOME_TYPE, y = AGE)) +
+  geom_boxplot(fill = "orange", alpha = 0.5) +
+  geom_jitter(width = 0.2, alpha = 0.5) +
+  labs(title = "Age Distribution of the 'Working Pensioners' Subgroup") +
+  theme_minimal()
+
+```
+
+```{r}
+# Scatter Plot: Focused on the Anomaly
+ggplot(working_pensioners_data, aes(x = AGE, y = EXPERIENCE_YEARS, color = OCCUPATION_TYPE)) +
+  geom_point(size = 3, alpha = 0.8) +
+  labs(
+    title = "The 'Working Pensioner' Subgroup",
+    subtitle = "Age vs. Experience (N = ~127).",
+    x = "Age (Years)",
+    y = "Years Employed",
+    color = "Occupation Type"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    legend.text = element_text(size = 8)
+  )
+```
+
+The boxplot above isolates the age distribution of the 'working pensioner' subgroup. Here we see a median age of approximately 42 years old, with a range from 25 to 60 years old. There is a complete absence of individuals over the standard retirement age (60+), which is statistically impossible for a genuine random sample of pensioners.
+
+The age profile of this group is identical to that of the active workforce. It does not reflect a demographic of retirees or even typical disability pensioners (who would likely show a wider age variance including older individuals).
+
+The scatterplot maps age against years employed, coloring points by there occupation type. T he subgroup is not limited to 'consultancy' or 'specialized' post-retirement roles. Instead, we see physically demanding and standard roles such as laborers, drivers, core staff, and security staff. Furthermore, the years-employed scales naturally with age, mimicking the standard accumulation of experience found in regular employees.
+
+The "Working Pensioners" do not form a distinct cluster. They are buried within the main distribution of the "Working" class. If they were a distinct demographic (e.g., wealthy early retirees), we would expect them to cluster differently in terms of experience-to-age ratio. Their perfect alignment with the standard workforce further suggests they are standard workers, simply mislabeled.
+
+Based on the evidence above, we conclude that these 127 rows represent classification errors. Due to the small amount of rows, we decide to drop them.
+
+NOTE: This was done in the final iteration of data cleaning. The previous iteration including these rows got a maximum validation accuracy in the neural network of 84%.
+
+```{r}
+print(paste("Total rows before:", nrow(data)))
+
+# 2. Filter out the specific anomaly
+# Logic: Keep rows that are NOT (Pensioner AND have Valid Employment Days)
+data <- data %>%
+  filter(!(NAME_INCOME_TYPE == "Pensioner" & DAYS_EMPLOYED != 365243))
+
+# 3. Verify the drop
+print(paste("Total rows after:", nrow(data)))
+
+# Double check: Should be 0
+remaining_anomalies <- nrow(data[data$NAME_INCOME_TYPE == "Pensioner" & data$DAYS_EMPLOYED != 365243, ])
+print(paste("Anomalies remaining:", remaining_anomalies))
+```
+
+We can now handle the remaining NA-values in OCCUPATION_TYPE.
+
+```{r}
+# 1. Reclassify OCCUPATION_TYPE
+data <- data %>%
+  mutate(
+    OCCUPATION_TYPE = as.character(OCCUPATION_TYPE),
+    OCCUPATION_TYPE = case_when(
+      DAYS_EMPLOYED == 365243 ~ "Retired", # Only the valid pensioners remain now
+      is.na(OCCUPATION_TYPE)  ~ "Unknown", # The missing workers
+      TRUE ~ OCCUPATION_TYPE
+    ),
+    OCCUPATION_TYPE = as.factor(OCCUPATION_TYPE)
+  )
+
+# 2. Calculate ACTIVE_EMPLOYMENT_YEARS cleanly in one step
+# We set sentinel values (365243) directly to 0 to avoid the "1000 year" glitch
+data <- data %>%
+  mutate(
+    ACTIVE_EMPLOYMENT_YEARS = ifelse(
+      DAYS_EMPLOYED == 365243, 
+      0, # in a previous iteration this was set so that the years_worked was 60
+      abs(DAYS_EMPLOYED) / 365.25
+    )
+  )
+
+# 3. Histogram 
+hist(data$ACTIVE_EMPLOYMENT_YEARS,
+     breaks = seq(0, max(data$ACTIVE_EMPLOYMENT_YEARS, na.rm=TRUE) + 1, by=1),
+     main = "Histogram of Employment Duration (Pensioners = 0)", 
+     xlab = "Years Employed", 
+     col = "lightblue",
+     border = "white")
+```
+
+As we see a very skewed distribution we will make a log-transformation to use in the Neural Network.
+
+Note: Empirical results from our previous neural network iterations confirmed that preserving 'Unknown' as a distinct category, rather than applying statistical imputation, significantly improved the model's ability to differentiate risk. This suggests that the absence of occupation data is Missing Not At Random (MNAR) and contains a latent 'informational signal', representing a specific risk profile among applicants who choose not to disclose their professional details. By avoiding methods like KNN or Mode imputation, we prevent the dilution of this signal and allow the network to learn the predictive weight of non-disclosure itself.
+
+```{r}
+# Log-transform ACTIVE_EMPLOYMENT_YEARS and drop the original
+data <- data %>%
+  mutate(ACTIVE_EMPLOYMENT_YEARS_LOG = log1p(ACTIVE_EMPLOYMENT_YEARS)) %>%
+  select(-c(DAYS_EMPLOYED, ACTIVE_EMPLOYMENT_YEARS))
+# Histogram of log-transformed ACTIVE_EMPLOYMENT_YEARS
+hist(data$ACTIVE_EMPLOYMENT_YEARS_LOG,
+     main="Histogram of Log-Transformed ACTIVE_EMPLOYMENT_YEARS",
+     xlab="Log(ACTIVE_EMPLOYMENT_YEARS + 1)",
+     col="lightblue")
+```
+
+## Analysis of family members and children
+
+We next examine CNT_FAM_MEMBERS and CNT_CHILDREN.
+
+```{r}
+# Identify extreme outliers
+outlier_fam_members <- data[data$CNT_FAM_MEMBERS > 10, ]
+print(outlier_fam_members)
+```
+
+A record showing a 38-year-old with 12 children (and a family size of 14) is statistically improbable within this demographic context and likely represents a data entry error. Given the extreme rarity (2 rows), these were removed to ensure the model is not biased by impossible family-to-income ratios.
+
+```{r}
+data <- data[data$CNT_FAM_MEMBERS <= 10, ]
+```
+
+A mathematical constraint must exist where CNT_FAM_MEMBERS ≥ CNT_CHILDREN + 1. A validation check identified 31 instances where the total family count was strictly less than the number of children reported.
+
+```{r}
+# Identify anomalous rows where children outnumber total family members
+anomaly_rows <- data[data$CNT_FAM_MEMBERS < data$CNT_CHILDREN, ]
+print(nrow(anomaly_rows)) # 31 rows
+```
+
+To rectify inconsistencies without losing data, we applied a deterministic correction based on NAME_FAMILY_STATUS. This assumes the child count is the "source of truth" and adjusts the total family count to include the necessary adults.
+
+-   If 'married' or 'civil marriage', the formula is CNT_CHILDREN + 2
+
+-   if 'separated', 'widowed', or 'single', the formula is CNT_CHILDREN + 1
+
+```{r}
+# Identify logic mask
+anomaly_mask <- data$CNT_FAM_MEMBERS < data$CNT_CHILDREN
+
+# Apply corrections
+data <- data %>%
+  mutate(CNT_FAM_MEMBERS = case_when(
+    anomaly_mask & NAME_FAMILY_STATUS %in% c("Married", "Civil marriage") ~ CNT_CHILDREN + 2,
+    anomaly_mask & NAME_FAMILY_STATUS %in% c("Separated", "Widow", "Single / not married") ~ CNT_CHILDREN + 1,
+    TRUE ~ CNT_FAM_MEMBERS
+  ))
+
+# Final verification
+nrow(data[data$CNT_FAM_MEMBERS < data$CNT_CHILDREN, ]) # Should be 0
+```
+
+his correction resolved the logical anomalies in all 31 cases. By using the family status to determine the number of adults, we maintain the integrity of the family-unit data which is often a strong predictor for debt-to-income ratios in credit scoring.
+
+## Analysis of income amount
+
+This chapter outlines the analysis and treatment of AMT_INCOME_TOTAL variable, focusing on outlier detection, logical consistency with occupation, and data normalization.
+
+```{r}
+summary(data$AMT_INCOME_TOTAL)
+```
+
+The initial summary of \`AMT_INCOME_TOTAL\` reveals a highly skewed distribution with a significant gap between the median (\$157,500) and the maximum (\$3'950'060).
+
+Visual inspection through histograms and boxplots confirms a heavy right-tail distribution dominated by extreme outliers.
+
+```{r}
+# Standard Histogram
+hist(data$AMT_INCOME_TOTAL, main="Histogram of AMT_INCOME_TOTAL", col="lightblue")
+```
+
+```{r}
+
+# Boxplot to visualize the distance of outliers from the interquartile range
+boxplot(data$AMT_INCOME_TOTAL, main="Boxplot of AMT_INCOME_TOTAL", ylab="Income", col="lightgreen")
+```
+
+To determine if the high-income values are legitimate or data entry errors, we analyzed income against NAME_EDUCATION_TYOE and OCCUPATION_TYPE.
+
+```{r}
+# Income by Education
+boxplot(data$AMT_INCOME_TOTAL ~ data$NAME_EDUCATION_TYPE, 
+        main="Income by Education Type", ylab = "Income", xlab = "Education", col="blue")
+
+```
+
+```{r}
+# Income by Occupation
+boxplot(data$AMT_INCOME_TOTAL ~ data$OCCUPATION_TYPE, 
+        main="Income by Occupation Type", ylab = "Income", xlab = "Occupation", col="blue")
+```
+
+```{r}
+# Age vs Income
+plot(data$AMT_INCOME_TOTAL ~ data$AGE, main="Age Versus Income", 
+     ylab="Total Income", xlab="Age", pch=19, col=rgb(0,0,0,0.2))
+```
+
+Examination of the top earners reveals critical inconsistencies. In a standard economic context, it is highly improbable for low-skill or service-oriented roles to command multi-million dollar annual salaries. Records where individuals in low-skill roles (e.g., Laborers, Cleaning staff) earn over \$1,000,000 are treated as entry errors. Removing these ensures that the model does not learn false correlations between low-skill occupations and extreme wealth.
+
+```{r}
+impossible_jobs <- c("Laborers", "Cleaning staff", "Secretaries", 
+                     "Low-skill Laborers", "Drivers", "Waiters/barmen staff")
+
+# Filter logic: Remove high earners in low-skill categories
+data <- data %>%
+  filter( !(AMT_INCOME_TOTAL > 1000000 & OCCUPATION_TYPE %in% impossible_jobs) )
+# Visualizing the normalized distribution
+hist(data$AMT_INCOME_TOTAL, 
+     main="Histogram ofAMT_INCOME_TOTAL", 
+     xlab="Log(AMT_INCOME_TOTAL + 1)", col="lightblue")
+```
+
+Even after removing logical outliers, the income variable remains highly skewed. To stabilize variance and minimize the impact of legitimate high-income earners, a Log Transformation (log1p) was applied.
+
+```{r}
+# Applying log transformation to achieve a more Gaussian distribution
+data <- data %>%
+  mutate(AMT_INCOME_TOTAL_LOG = log1p(AMT_INCOME_TOTAL))
+
+# Visualizing the normalized distribution
+hist(data$AMT_INCOME_TOTAL_LOG, 
+     main="Histogram of Log-Transformed AMT_INCOME_TOTAL", 
+     xlab="Log(AMT_INCOME_TOTAL + 1)", col="lightblue")
+```
+
+The resulting log-transformed distribution is much closer to a normal distribution, providing a more stable input for the neural network and preventing the gradient from being dominated by extreme values.
+
+Note: In previous iterations all values above the 99% percentile were dropped without checking any domain logic.
+
+## Correlation
+
+In this chapter we check for mutlicollinearity. Thfis is for different reasons than we would for a linear model. While Neural Networks are famously capable of handling non-linear relationships and redundant features, a correlation matrix is still av ital diagnostic tool during the data cleaning phase.
+
+Even though NNs can technically learn to ignore redundant features, high multicollinearity can make the model's loss landscape 'flat' or unstable.
+
+In terms if data-leakage this is only allowed to be done using the train data. Throughout this entire project we use seed 42 for obvious reasons. The data is splitted into train (70%), validation (15%) and test (15%).
+
+```{r}
+set.seed(42) # ANSWER TO EVERYTHING
+# Ensure target_col is defined
+target_col <- "status" 
+
+# Create splits based on the target
+y_factor <- factor(data[[target_col]])
+test_idx <- caret::createDataPartition(y_factor, p = 0.15, list = FALSE)
+test_data <- data[test_idx, ]
+remain_data <- data[-test_idx, ]
+
+val_p <- 0.15 / 0.85
+val_idx <- caret::createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+val_data   <- remain_data[val_idx, ]
+train_data <- remain_data[-val_idx, ]
+```
+
+```{r}
+# Calculate correlation matrix for numerical columns
+# Note: Use 'pearson' for linear and 'spearman' for non-linear rank correlation
+cor_matrix <- cor(train_data %>% select_if(is.numeric), use="complete.obs", method="pearson")
+
+# Visualize with a heatmap
+corrplot(cor_matrix, method="color", tl.cex=0.7, title="Correlation Matrix of Cleaned Features")
+```
+
+In the provided Correlation Matrix, we see a heatmap representing the strength and direction of linear relationships between numerical variables. The graph uses a color scale where dark blue indicates a strong positive correlation, dark red indicates a strong negative correlation, and white indicates no linear correlation.
+
+The most prominent dark blue square occurs at the intersection of CNT_CHILDREN and CNT_FAM_MEMBERS. This indicates that as athe number of children increases, the total family size increases almost in lockstep.
+
+In traditional statistics, high intercorrelation is problematic because it suggests that one feature is a linear combination of another. Dropping a redundant feature reduces the dimensionality of the problem, making the model faster to train and easier to interpret.
+
+While Neural Networks are more robust to multicollinearity than linear models, it still influences the training process. High correlation can make the "loss landscape" flat in certain directions, which can cause the optimizer to oscillate or converge more slowly toward the best solution. The network might assign very large weights to one feature and very small weights to the other, even though they carry the same signal. This can make the model less stable when faced with new, unseen data.
+
+Despite the high correlation between CNT_FAM_MEMBERS and CNT_CHILDREN seen in the matrix, we keep both for the following reasons:
+
+-   Latent Information:By keeping both, we allow the Neural Network to implicitly calculate the number of adults (Adults=Family Members−Children). This distinguishes between a single-parent household and a dual-parent household of the same total size.
+-   Interaction Effects:The network can learn complex, non-linear interactions between these two variables that a simple correlation coefficient cannot capture, such as how the financial burden of children might change depending on the total number of adults present.
+-   Data Integrity:Since we have already performed deterministic imputation to ensure these columns are logically consistent (Total Family≥Children + 1), providing both features gives the network the "full picture" of the household structure.
+
+## Final Data Audit and Chapter Conclusion
+
+This section summarizes the final state of the dataset following the multi-stage cleaning process. We have successfully resolved structural anomalies in employment data, corrected logical errors in family units, and mitigated the influence of extreme income outliers.
+
+## Summary of Engineered Features
+
+The table below provides the final audit of transformed variables:
+
+| Original Variable | Cleaned/Engineered Variable | AGE |
+|------------------------|------------------------|------------------------|
+| DAYS_BIRTH | AGE | Absolute value conversion to positive years. |
+| DAYS_EMPLOYED | ACTIVER_EMPLOYMENT_YEARS_LOG | Sentinel values set to 0; log1p transformation applied |
+| OCCUPATION_TYPE | OCCUPATION_TYPE | NA values imputed as 'Retired' for pensioners and 'Unknown' for workers. |
+| CNT_FAM_MEMBERS | CNT_FAM_MEMBERS | Deterministic correction where FAM_MEMBERS \< CHILDREN |
+| AMT_INCOME_TOTAL | AMT_INCOME_TOTAL_LOG | Removal of 'impossible' job/income pairs and log1p scaling |
+
+## Dataset Dimensions
+
+```{r}
+dim(data)
+```
+
+# Feature Engineering
+
+The feature engineering phase was initiated during the third iteration of the data cleaning and modeling process. Despite significant efforts in fine-tuning the Neural Network architecture, including adjustments to layer depth, dropout rates, and activation functions, validation accuracy remained persistently low and stagnant.
+
+Analysis of the misclassifications suggested that the raw features lacked sufficient "signal" to distinguish between target classes, particularly for minority classes. To overcome this, we transitioned from basic data cleaning to active feature engineering. The goal was to create interaction terms and domain-specific ratios that provide the model with better context regarding a borrower's financial stability and life stage.
+
+## Financial context: family and life stage ratios
+
+A borrower’s raw income is less informative than their "disposable" income or earning power relative to their age and dependents. We created interaction terms to provide the model with this missing context.
+
+### Income per Family Member
+
+Total income does not account for the financial burden of dependents. We created INCOME_PER_FAMILY_MEMBER to capture the per-capita resource availability within the household. Given the high skewness of financial data, we applied a log transformation to normalize the distribution.
+
+```{r}
+# Interaction term for family-adjusted income
+data$INCOME_PER_FAMILY_MEMBER <- data$AMT_INCOME_TOTAL / data$CNT_FAM_MEMBERS
+
+# Log transformation to stabilize variance
+data <- data %>%
+  mutate(INCOME_PER_FAMILY_MEMBER_LOG = log1p(INCOME_PER_FAMILY_MEMBER)) %>%
+  select(-c(AMT_INCOME_TOTAL,INCOME_PER_FAMILY_MEMBER))
+
+
+# Histogram of INCOME_PER_FAMILY_MEMBER
+hist(data$INCOME_PER_FAMILY_MEMBER_LOG,
+     main="Histogram of INCOME_PER_FAMILY_MEMBER_LOG",
+     xlab="Income per Member",
+     col="lightblue")
+```
+
+## Target Distributions
+
+```{r}
+# Look at the distribution of the target variable histogram
+ggplot(data, aes(x = status)) + 
+  geom_bar(fill = "steelblue", color = "black") +
+  geom_text(
+    stat = "count",
+    aes(label = after_stat(count)),
+    vjust = -0.5
+  ) +
+  labs(
+    title = "Distribution of Target Variable (Status)",
+    subtitle = "Majority Class (0) vs. Minorities (1–5) vs. Special (C, X)",
+    x = "Status Category",
+    y = "Count"
+  ) +
+  theme_minimal()
+```
+
+The target variable distribution reveals a severe class imbalance, with the majority class (0) overwhelmingly outnumbering minority delinquency categories (1–5) and special status codes (C, X). Such extreme skewness can cause a neural network to develop a strong majority-class bias, where it achieves high overall accuracy by simply predicting the most frequent class while failing entirely to identify high-risk borrowers. To mitigate this, common sampling techniques like oversampling minority instances via SMOTE or undersampling the majority class can be employed to balance the training signal. Alternatively, algorithmic adjustments such as applying class weights or utilizing Focal Loss can penalize errors in minority classes more heavily, forcing the network to prioritize difficult, underrepresented examples. Beyond sampling, architectural strategies like delayed generalization or monitoring for grokking, where the model suddenly learns to generalize long after traditional convergence, may help the network move beyond simple rote memorization of the majority distribution toward meaningful pattern recognition across all risk tiers.
+
+# Preprocessing 2
+
+This final phase of data preparation transitions the cleaned dataset into a machine-ready format. The primary objective is to transform categorical strings and boolean flags into numerical representations that the neural network can process, while removing redundant original variables to prevent multi-collinearity.
+
+## Target Recoding
+
+```{r}
+# TARGET RECODING
+# Mapping status levels to class IDs 0..7
+data$status <- as.character(data$status)
+data$target_class <- recode(data$status,
+                            "X" = 0, "C" = 1, "0" = 2, "1" = 3,  
+                            "2" = 4, "3" = 5, "4" = 6, "5" = 7) |> as.numeric()
+
+data <- data %>% select(-status)
+```
+
+## Categorical Encoding: Ordinal vs. Nominal
+
+We distinguish between two types of categorical data to preserve as much information as possible:
+
+-   Ordinal Encoding: Education level is treated as a ranked variable (EDUCATION_ENCODED), as there is a clear logical progression from secondary education to an academic degree.
+
+-   One-Hot Encoding: Nominal variables like CODE_GENDER, NAME_INCOME_TYPE, and our engineered OCCUPATION_GROUP have no inherent ranking. These are expanded into binary dummy columns to ensure the model does not assume a false mathematical relationship between categories.
+
+```{r}
+# EDUCATION (ORDINAL ENCODING)
+data$EDUCATION_ENCODED <- case_when(
+    data$NAME_EDUCATION_TYPE == "Lower secondary" ~ 0,
+    data$NAME_EDUCATION_TYPE == "Secondary / secondary special" ~ 1,
+    data$NAME_EDUCATION_TYPE == "Incomplete higher" ~ 2,
+    data$NAME_EDUCATION_TYPE == "Higher education" ~ 3,
+    data$NAME_EDUCATION_TYPE == "Academic degree" ~ 4,
+    TRUE ~ NA_real_
+)
+data <- data %>% select(-NAME_EDUCATION_TYPE)
+
+# NOMINAL ENCODING (ONE-HOT)
+nominal_cols <- c("CODE_GENDER", "NAME_INCOME_TYPE", "NAME_FAMILY_STATUS", 
+                  "NAME_HOUSING_TYPE", "OCCUPATION_TYPE")
+
+data[nominal_cols] <- lapply(data[nominal_cols], as.factor)
+
+data <- dummy_cols(
+  data,
+  select_columns = nominal_cols,
+  remove_selected_columns = TRUE,
+  remove_first_dummy = FALSE 
+)
+```
+
+## Drop ID-column
+
+Since ID is just an identifier and not a real feature, it should be dropped.
+
+```{r}
+data <- data %>%
+  select(-ID)
+
+# Final Structure Check
+str(data)
+```
+
+## Note on Feature Scaling
+
+Throughout the iterative development of the neural network, the strategy for feature scaling evolved to better align with the Rectified Linear Unit (ReLU) activation function and the specific distribution of our engineered features.
+
+### Initial Iterations: Robust Scaler
+
+In the first two iterations, Robust Scaler was employed as the primary normalization tool.
+
+-   Mechanism: Unlike standard scaling which uses the mean and variance, the Robust Scaler removes the median and scales the data according to the Interquartile Range (IQR).
+-   ustification: This method is specifically designed to handle datasets with significant outliers, such as the initial versions of our income and employment data. It ensures that extreme values do not exert undue influence on the feature's scale, preserving the relative relationships within the majority of the data.
+-   Compatibility with ReLU: Robust Scaler typically produces a centered distribution with both positive and negative values. This works with ReLU because the network can learn to utilize the "active" positive region for significant signals while the negative region is zeroed out, effectively acting as a natural threshold for the neurons.
+
+### Transition to Min-Max Scaling
+
+In the final iteration, the scaling strategy was shifted to Min-Max Scaling to optimize performance with the ReLU activation function.
+
+-   Mechanism: Min-Max Scaling transforms all features into a fixed range, typically [0, 1], by subtracting the minimum value and dividing by the range.
+-   Superiority with ReLU:
+    -   Avoiding Dead Neurons: ReLU outputs zero for any negative input ($f(x) = \max(0, x)$). By shifting the entire feature set to a positive [0, 1] range, we ensure that every feature starts within the active gradient region of the ReLU function. This reduces the risk of "dying ReLU" problems during the initial phases of training.
+    -   Consistent Input Space: Standardizing all inputs to the same positive bounds allows for more stable weight initialization and prevents certain features from dominating the gradient updates simply due to their numerical magnitude.
+-   Sparsity Preservation: Min-Max scaling is particularly effective at preserving the zero-values in sparse data, which is essential given our use of one-hot encoding for the OCCUPATION_GROUP.
+
+### Leakage Prevention and Implementation
+
+While Min-Max Scaling is a required step for neural network convergence, it is intentionally excluded from this preprocessing script.
+
+Data Leakage Prevention: To prevent data leakage, the scaling parameters (minimum and maximum values) must be calculated solely on the training split. Implementation Flow: If parameters were calculated using the entire dataset, information from the test set would "leak" into the training process. Consequently, scaling is implemented within the neural network training script immediately following the data split.
+
+# Neural Network
+
+## Neural Network Type: The Multi-Layer Perceptron (MLP)
+
+For this classification task, we selected a Multi-Layer Perceptron (MLP), the canonical form of a feed-forward neural network. While modern deep learning often focuses on specialized architectures like Convolutional Neural Networks (CNNs) for image data or Recurrent Neural Networks (RNNs) for sequential data, the MLP remains the optimal choice for tabular datasets for several key reasons:
+
+1.  Data Independence: Our dataset consists of independent customer records. Unlike time-series data (e.g., stock prices), there is no temporal dependency between Row i and Row i+1. Unlike image data, there is no spatial correlation between Column A and Column B. CNNs and RNNs rely on these dependencies to function; applying them here would introduce unnecessary computational overhead without theoretical benefit.
+
+2.  Universal Approximation: The Universal Approximation Theorem states that a feed-forward network with a single hidden layer containing a finite number of neurons can approximate any continuous function. Given the complex, non-linear relationships between financial variables (e.g., the interaction between Age, Income, and Family Size), an MLP provides the necessary capacity to map these inputs to the 8 target classes.
+
+3.  Feature Interaction: Unlike linear models (e.g., Logistic Regression), which assume additive relationships, an MLP learns to combine features. A neuron in the second hidden layer might activate only when Income is Low AND Family Size is High, effectively automating the feature engineering process.
+
+## Defining the Architecture
+
+Designing the network topology is a balancing act between Capacity (the ability to learn complex patterns) and Generalization (the ability to perform well on unseen data). Our final architecture was derived through a systematic Grid Search, but guided by the following principles:
+
+### Input Layer
+
+The input layer size corresponds to the number of features after preprocessing. Since we employed One-Hot Encoding for categorical variables (like Occupation and Gender), our input vector is sparse and high-dimensional.
+
+### Hidden Layers (Depth and Width)
+
+We experimented with depths ranging from 1 to 3 hidden layers.
+
+The Risk of Depth: Theoretical literature on tabular data suggests that deep networks often suffer from the vanishing gradient problem, where the signal from the loss function dilutes as it propagates back through many layers. Furthermore, deep networks on small datasets are prone to overfitting, memorizing the noise in the training set rather than the signal.
+
+The Width Strategy (Cubic vs. Funnel): We tested two shape configurations. Funnel (Pyramid): Layers decrease in size (e.g., 512 to 256 to 128). This assumes the network should compress information into higher-level abstractions. Cubic (Rectangular): Layers maintain constant width (e.g., 256 to 256 to 256).
+
+```{r}
+# Define the Search Grid
+runs_grid <- list(
+  # --- 1. ARCHITECTURE ---
+  # Search Size: Wide (512) vs. Narrow (256)
+  units1 = c(128, 256, 512),
+  
+  # Search Funneling: Tapered (128) vs. Cylindrical (256)
+  units2 = c(64, 128, 256),
+  
+  # Search Depth: 2 Layers (0) vs. 3 Layers (64)
+  units3 = c(0, 64), 
+  
+  # --- 2. OPTIMIZATION ---
+  # Search Learning Speed: Standard (1e-3) vs. Precise (3e-4)
+  learning_rate = c(0.001),
+  
+  # Search Gradient Noise: Noisy (128) vs. Stable (256)
+  batch_size = c(64),
+  
+  # --- 3. REGULARIZATION  ---
+  dropout1 = c(0.0),
+  dropout2 = c(0.0),
+  dropout3 = c(0.0),
+  
+  # Search Weight Decay: Light (1e-2) vs. Heavy (1e-1)
+  # *Added Weight Decay variation here*
+  #weight_decay = c(0.01, 0.1, 0.3, 0.5),
+  momentum = c(0.9),
+  # --- CONSTANTS ---
+  patience = c(100),
+  epochs = c(500)
+)
+```
+
+The goal of this grid search is to only see how high validation accuracy can get depending solely on the network architecture.
+
+```{r}
+tic()
+tuning_run("Assignment_2_MLP_minmax.r", 
+           runs_dir = "tuning_architecture_minmax", 
+           flags = runs_grid, 
+           sample = 1.0, # Run ALL combinations (set to e.g. 0.5 to run random 50%)
+           echo = FALSE)
+
+beep(sound=5)
+toc()
+```
+
+### Activation Functions
+
+We utilized the Rectified Linear Unit for our hidden layers. ReLU is the standard for deep learning because it introduces non-linearity without suffering from the vanishing gradient problem common in Sigmoid or Tanh functions. However, we discovered a critical dependency between our choice of scaler and this activation function. Initial Failure (Robust Scaler): In our early iterations, we used a Robust Scaler, which centers data and often produces negative values for inputs below the median. Since ReLU defines the output of any negative input as exactly 0, a significant portion of our input signal was immediately zeroed out (deactivated) upon entering the first hidden layer. This led to dead neurons and significant information loss. The Fix (Min-Max Scaler): To resolve this, we switched to Min-Max Scaling, which forces all input features into the range [0, 1]. By ensuring all input values are positive, we guarantee that they fall into the active linear region of the ReLU function (x \> 0) rather than the dead region. This alignment between our preprocessing and our activation function resulted in an immediate and significant increase in model accuracy.
+
+Output Layer (Softmax): Since this is a multi-class classification problem with 8 mutually exclusive classes, the final layer uses the Softmax function. This converts the raw logits into a probability distribution summing to 1.0, allowing us to interpret the output as confidence percentages.
+
+$$
+\text{Softmax}(z_i) = \frac{e^{z_i}}{\sum_{j} e^{z_j}}
+$$
+
+Here we demonstrate the difference of both scalers with the relu activation function. In the following experiment a robustscaler was used with the same architecture as above.
+
+```{r}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_robustscaler.r")
+beep(sound=5)
+toc()
+```
+
+## Class Imbalance Handling
+
+Our target variable is severely imbalanced (approx. 99% Good vs 1% Bad/Late). A standard neural network minimizes global error by predicting the majority class for every instance, achieving 99% accuracy but 0% utility. We implemented a three-tiered defense against this:
+
+### A. Data Level: SMOTE and Real Augmentation
+
+Random oversampling, which involves simply duplicating rows, frequently leads to overfitting because the model memorizes specific examples rather than learning general patterns. To address this, we employed SMOTE. Instead of duplication, SMOTE creates new synthetic examples by interpolating between existing minority samples in the feature space. This forces the model to learn a more generalized decision boundary. We noted that ADASYN (Adaptive Synthetic Sampling) could represent a potential enhancement. ADASYN functions similarly to SMOTE but prioritizes generating synthetic data for examples located near the decision boundary, which are harder to classify. However, this variation was not implemented in this project.
+
+```{r}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_SMOTE.r")
+beep(sound=5)
+toc()
+```
+
+As an alternative, we sourced additional minority-class rows directly from the original, larger Kaggle source dataset. This involved joining the original application_record.csv with credit_record.csv. For each customer ID, we identified their worst recorded pay-back behavior to determine their target label. To ensure the integrity of the assignment validation, we performed a rigorous de-duplication process. We dropped the ID column from both the assignment dataset and the new Kaggle dataset to compare them purely based on feature content. We then filtered the Kaggle dataset to retain only those rows that were not present in the original assignment data.
+
+This process significantly increased the volume of training data available for minority classes. We hypothesized that providing real examples would help the model better distinguish between risk categories. However, we observed a trade-off: this approach altered the class distribution of the training set compared to the validation and test sets (which reflect the real-world distribution). Consequently, while the model learned minority patterns better, the overall validation accuracy decreased due to this distribution shift.
+
+### B. Algorithm Level: Class Weights
+
+We applied cost-sensitive learning by assigning higher penalties to misclassifications of the minority class.
+
+Computed Weights: We calculated weights inversely proportional to class frequency: $$w_j = \frac{N_{samples}}{N_{classes} \times N_j}$$
+
+```{r}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_weighted.r")
+beep(sound=5)
+toc()
+```
+
+Manual Tuning: We found that the calculated weights were sometimes too aggressive, causing the model to predict Default too often (High Recall, Low Precision). We manually tuned these weights to find a business-logic balance, ensuring we catch defaulters without rejecting every customer.
+
+```{r}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_man_weight.r")
+beep(sound=5)
+toc()
+```
+
+### C. Loss Function: Focal Loss
+
+In our final experiments, we replaced standard Categorical Cross-Entropy with Focal Loss.
+
+Concept: Cross-Entropy is overwhelmed by the sheer number of easy examples (majority class inputs that are easily classified). Focal Loss adds a modulating factor $(1 - p_t)^\gamma$ to the loss equation.
+
+Effect: If the model is 99% confident in a prediction (an easy example), the modulating factor approaches 0, effectively silencing the loss contribution from that example. This forces the network to focus its updates entirely on the hard examples (the minority class errors).
+
+### Choosing the Optimizer: The Shift from Adam to SGD
+
+The choice of optimizer was one of the most significant pivots in our workflow.
+
+### Initial Approach: Adam and AdamW
+
+We began with Adam (Adaptive Moment Estimation), the industry standard for rapid convergence. Adam computes individual adaptive learning rates for different parameters. This is theoretically advantageous for our sparse, One-Hot encoded data, as it boosts the learning rate for rarely occurring features (like specific job titles).
+
+Observation: While Adam converged quickly to a high training accuracy, we observed overfitting. The validation loss would decrease rapidly and then begin to rise, indicating the model was memorizing the training data.
+
+### Final Approach: SGD with Momentum
+
+To improve generalization, we switched to Stochastic Gradient Descent (SGD) with Momentum.
+
+The Generalization Gap: Recent research suggests that adaptive methods like Adam often converge to sharp minima in the loss landscape. A sharp minimum means that if the test data shifts slightly (which is guaranteed in real-world scenarios), the error skyrockets.
+
+Flat Minima: SGD, while slower, tends to find flatter minima. In a flat region, small perturbations in the data do not significantly impact the loss.
+
+Momentum: To prevent SGD from getting stuck in local minima or oscillating in steep ravines, we added a momentum term (0.9). This acts like a heavy ball rolling down a hill—it builds up speed in the relevant direction and powers through small bumps (noise) in the loss surface.
+
+## 
+
+## Hyperparameter Tuning and Training Strategy
+
+### Grid Search Implementation
+
+Given the computational cost of training for 5,000 epochs, standard K-Fold Cross-Validation was infeasible. We utilized a rigorous Grid Search on a fixed validation set.
+
+Search Space: Neurons: [64, 128, 256, 512] Dropout: [0.1, 0.2, 0.3, 0.5] Batch Size: [32, 64, 128]
+
+Why specific ranges? We avoided neurons \> 512 as the model size became disproportionate to the dataset size (leading to immediate overfitting). We avoided Batch Sizes \> 128 because smaller batches introduce noise into the gradient estimate, which, paradoxically, acts as a regularizer and helps escape sharp local minima.
+
+### Regularization: Dropout
+
+To further prevent overfitting, we inserted Dropout layers after each hidden layer. Dropout randomly deactivates a percentage of neurons (e.g., 30%) during each training pass.
+
+Justification: This prevents neurons from co-adapting (relying on each other to correct errors). It forces each neuron to learn useful features independently, effectively training an ensemble of exponentially many thinner networks within a single model.
+
+###  Manual Learning Rate Scheduling and Grokking
+
+We observed a phenomenon known as Grokking or delayed generalization, where the model's validation accuracy would stagnate for hundreds of epochs before suddenly improving. To exploit this, we abandoned automatic decay (like ReduceLROnPlateau) in favor of a Manual Scheduler.
+
+Strategy: We trained with a relatively high learning rate (0.01) for the first 1,000 epochs to explore the loss landscape broadly.
+
+Refinement: Once the loss stabilized, we manually intervened to drop the learning rate by a factor of 10 (0.001). This allowed the optimizer to settle into the deepest part of the global minimum without overshooting. This manual control gave us the stability required to train for extended durations (5,000 epochs).

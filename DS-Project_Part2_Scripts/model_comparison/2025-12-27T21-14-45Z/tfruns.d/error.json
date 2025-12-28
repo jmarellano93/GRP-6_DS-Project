@@ -1,0 +1,4 @@
+{
+  "message": "could not find function \"k_clear_session\"",
+  "traceback": ["eval(ei, envir)", "eval(ei, envir)", "withVisible(eval(ei, envir))", "tuning_run(\"Assignment_2_MLP_modelcomp.r\", runs_dir = \"model_comparison\", \n    flags = comparison_grid, sample = 1, echo = FALSE)"]
+}

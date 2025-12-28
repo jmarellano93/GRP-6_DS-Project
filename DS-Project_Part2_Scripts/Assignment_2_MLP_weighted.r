@@ -1,5 +1,5 @@
-# Assignment 2 MLP (Multi-Layer Perceptron) extended with class weighting
-# Supports Variable Depth (2 or 3 Layers) and Robust Scaling
+# Assignment 2 MLP: Class Weighting + Train/Val/Test Split
+# Architecture: Batch Norm + ReLU + SGD + Variable Depth
 
 library(keras3)
 library(caret)
@@ -8,168 +8,152 @@ library(tfruns)
 
 # 1. Hyperparameter flags ------------------------------------------------
 FLAGS <- flags(
-  # Regularization
-  flag_numeric("dropout1", 0),
-  flag_numeric("dropout2", 0),
-  flag_numeric("dropout3", 0.0), # New: For optional 3rd layer
-  
   # Architecture
-  flag_integer("units1", 128),
+  flag_integer("units1", 512),
   flag_integer("units2", 256),
-  flag_integer("units3", 0),     # New: 0 = "Off" (2 Layers), >0 = "On" (3 Layers)
+  flag_integer("units3", 0),       # 0 = Disabled
   
-  # Optimization
-  flag_numeric("learning_rate", 0.001),
-  flag_integer("batch_size", 128),
-  flag_integer("epochs", 100)
+  # Regularization
+  flag_numeric("dropout1", 0), 
+  flag_numeric("dropout2", 0),
+  flag_numeric("dropout3", 0.0),   
+  
+  # Optimization (SGD Settings)
+  flag_numeric("learning_rate", 0.001), 
+  flag_numeric("momentum", 0.9),       
+  flag_integer("batch_size", 32),
+  flag_integer("epochs", 1000),    
+  flag_integer("patience", 200)    
 )
 
 # 2. Load & Prepare Data -------------------------------------------------
-# Ensure the path is correct
-data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/Assignment_2_cleaned.csv")
+# (Assuming 'data' is loaded in your environment)
 target_col <- "target_class" 
 
-x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
-y_all <- to_categorical(data[[target_col]], num_classes = 8)
-
-# 3. Split Data ----------------------------------------------------------
+# 3. Stratified Split (Train / Val / Test) -------------------------------
 set.seed(42)
+y_factor <- factor(data[[target_col]])
 
-# Holdout Test Set (15%)
-n_rows <- nrow(x_all)
-test_idx <- sample(1:n_rows, size = floor(0.15 * n_rows))
+# Step A: Create Test Set (15%)
+test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+test_data <- data[test_idx, ]
+remain_data <- data[-test_idx, ]
 
-x_test_holdout_raw <- x_all[test_idx, ]
-y_test_holdout     <- y_all[test_idx, ]
+# Step B: Create Val Set from the remainder (15% of total ~ 17.6% of remain)
+val_p <- 0.15 / 0.85
+val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
 
-x_cv_raw <- x_all[-test_idx, ] 
-y_cv     <- y_all[-test_idx, ]
+val_data   <- remain_data[val_idx, ]
+train_data <- remain_data[-val_idx, ]
 
-# 4. Cross-Validation Setup ----------------------------------------------
-k <- 5
-folds <- cut(seq(1, nrow(x_cv_raw)), breaks = k, labels = FALSE)
+# 4. Preprocessing (MinMax Scaling) --------------------------------------
+# Extract X matrices
+x_train_raw <- as.matrix(mutate(train_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
 
-# Initialize Storage
-results <- data.frame(
-  Fold = integer(),
-  Train_Loss = numeric(),
-  Val_Loss = numeric(),
-  Train_Acc = numeric(),
-  Val_Acc = numeric()
+# Prepare One-Hot Targets
+y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+# Scale Features (Fit on Train, Apply to Train & Val)
+# "zv" removes zero variance, "range" scales to 0-1
+scaler <- preProcess(x_train_raw, method = c("zv", "range"))
+
+x_train <- predict(scaler, x_train_raw)
+x_val   <- predict(scaler, x_val_raw)
+
+# 5. Calculate Class Weights (On Train Set Only) -------------------------
+# Convert One-Hot back to integer class labels (0-7) for counting
+y_train_integers <- max.col(y_train) - 1
+
+# Count frequencies
+counts <- table(factor(y_train_integers, levels = 0:7))
+
+# Calculate Weights: Total / (n_classes * count)
+n_classes <- 8
+total_samples <- sum(counts)
+weights_vec <- total_samples / (n_classes * (counts + 1e-7)) # epsilon for safety
+
+class_weights_list <- as.list(weights_vec)
+names(class_weights_list) <- 0:7
+
+cat("Class Weights applied:\n")
+print(unlist(class_weights_list))
+
+# 6. Define Model (BN + ReLU + Dropout) ----------------------------------
+model <- keras_model_sequential() %>%
+  # Layer 1
+  layer_dense(units = FLAGS$units1, input_shape = c(ncol(x_train)), use_bias = FALSE) %>%
+  layer_batch_normalization() %>%  
+  layer_activation("relu") %>%
+  layer_dropout(FLAGS$dropout1) %>%
+  # Layer 2
+  layer_dense(units = FLAGS$units2, use_bias = FALSE) %>%
+  layer_batch_normalization() %>%
+  layer_activation("relu") %>%
+  layer_dropout(FLAGS$dropout2)
+
+# Layer 3 (Conditional)
+if (FLAGS$units3 > 0) {
+  model <- model %>%
+    layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
+    layer_batch_normalization() %>%
+    layer_activation("relu") %>%
+    layer_dropout(FLAGS$dropout3)
+}
+
+# Output Layer
+model <- model %>%
+  layer_dense(units = 8, activation = "softmax")
+
+# 7. Compile (SGD with Momentum) -----------------------------------------
+model %>% compile(
+  loss = "categorical_crossentropy",
+  optimizer = optimizer_sgd(
+    learning_rate = FLAGS$learning_rate,
+    momentum = FLAGS$momentum,
+    nesterov = TRUE
+  ),
+  metrics = list("accuracy")
 )
 
-cat("Starting", k, "-Fold Cross-Validation (With Class Weighting)...\n")
-
-# 5. Training Loop -------------------------------------------------------
-for(i in 1:k){
-  cat("\n--- Processing Fold #", i, "---\n")
-  
-  # a. Split
-  val_indices <- which(folds == i, arr.ind = TRUE)
-  x_fold_val_raw   <- x_cv_raw[val_indices, ]
-  y_fold_val       <- y_cv[val_indices, ]
-  x_fold_train_raw <- x_cv_raw[-val_indices, ]
-  y_fold_train     <- y_cv[-val_indices, ]
-  
-  # b. Robust Scaling (Include 'zv' for safety)
-  fold_scaler <- preProcess(x_fold_train_raw, method = c("zv", "center", "scale"))
-  x_fold_train <- predict(fold_scaler, x_fold_train_raw)
-  x_fold_val   <- predict(fold_scaler, x_fold_val_raw) 
-  
-  # --- NEW: Calculate Class Weights for this Fold ---
-  # 1. Convert One-Hot back to Integers (0-7)
-  # max.col returns the index of the max value (1-8), so we subtract 1
-  y_train_integers <- max.col(y_fold_train) - 1
-  
-  # 2. Count frequencies
-  # factor() ensures we count all classes 0-7 even if some are missing in this fold
-  counts <- table(factor(y_train_integers, levels = 0:7))
-  
-  # 3. Compute Balanced Weights: Total / (n_classes * count)
-  # Add small epsilon 1e-7 to avoid division by zero if a class is completely missing
-  n_classes <- 8
-  total_samples <- sum(counts)
-  weights_vec <- total_samples / (n_classes * (counts + 1e-7))
-  
-  # 4. Convert to named list for Keras
-  class_weights_list <- as.list(weights_vec)
-  names(class_weights_list) <- 0:7
-  
-  # Debug: Print weights for the first fold to verify
-  if (i == 1) {
-    cat("Class Weights for Fold 1:\n")
-    print(unlist(class_weights_list))
-  }
-  # --------------------------------------------------
-  
-  # c. Define Model (Variable Depth Logic)
-  # Base: Layer 1 + Layer 2
-  model <- keras_model_sequential(input_shape = c(ncol(x_fold_train))) %>%
-    layer_dense(units = FLAGS$units1, activation = 'relu') %>%
-    layer_dropout(rate = FLAGS$dropout1) %>%
-    layer_dense(units = FLAGS$units2, activation = 'relu') %>%
-    layer_dropout(rate = FLAGS$dropout2)
-  
-  # Optional: Layer 3 (Only added if units3 > 0)
-  if (FLAGS$units3 > 0) {
-    model <- model %>%
-      layer_dense(units = FLAGS$units3, activation = 'relu') %>%
-      layer_dropout(rate = FLAGS$dropout3)
-  }
-  
-  # Output Layer
-  model <- model %>% 
-    layer_dense(units = 8, activation = 'softmax')
-  
-  # d. Compile
-  model %>% compile(
-    loss = 'categorical_crossentropy',
-    optimizer = optimizer_adam(learning_rate = FLAGS$learning_rate),
-    metrics = c('accuracy')
+# 8. Train (Early Stopping + Class Weights) ------------------------------
+history <- model %>% fit(
+  x_train, y_train,
+  epochs = FLAGS$epochs,
+  batch_size = FLAGS$batch_size,
+  validation_data = list(x_val, y_val),
+  class_weight = class_weights_list, # <--- Apply Weights
+  verbose = 0,
+  callbacks = list(
+    callback_early_stopping(
+      monitor = "val_accuracy", 
+      patience = FLAGS$patience, 
+      restore_best_weights = TRUE,
+      verbose = 1
+    )
   )
-  
-  # e. Train (Clean Output)
-  history <- model %>% fit(
-    x_fold_train, y_fold_train,
-    batch_size = FLAGS$batch_size,
-    epochs = FLAGS$epochs,
-    verbose = 0,
-    validation_data = list(x_fold_val, y_fold_val),
-    class_weight = class_weights_list # <--- APPLY WEIGHTS HERE
-  )
-  
-  # f. Extract BEST Metrics (Not just the last one)
-  best_epoch_idx <- which.max(history$metrics$val_accuracy)
-  best_val_acc   <- history$metrics$val_accuracy[best_epoch_idx]
-  best_train_acc <- history$metrics$accuracy[best_epoch_idx]
-  final_val_loss <- history$metrics$val_loss[best_epoch_idx]
-  final_train_loss <- history$metrics$loss[best_epoch_idx]
-  
-  # Store
-  results[i, ] <- c(i, final_train_loss, final_val_loss, best_train_acc, best_val_acc)
-  
-  cat(sprintf("Fold %d | Max Val Acc: %.4f (at Epoch %d)\n", 
-              i, best_val_acc, best_epoch_idx))
-}
+)
 
-# 6. Final Report --------------------------------------------------------
-cat("\n========================================\n")
-cat("      ARCHITECTURE PERFORMANCE          \n")
-cat("========================================\n")
+# 9. Evaluation ----------------------------------------------------------
+# Make predictions
+val_probs <- model %>% predict(x_val, verbose = 0)
+val_preds <- apply(val_probs, 1, which.max) - 1
+val_true  <- apply(y_val, 1, which.max) - 1
 
-avg_train_acc <- mean(results$Train_Acc)
-avg_val_acc   <- mean(results$Val_Acc)
-gap <- avg_train_acc - avg_val_acc
+# Generate Confusion Matrix
+cm <- confusionMatrix(
+  factor(val_preds, levels = 0:7), 
+  factor(val_true, levels = 0:7), 
+  mode = "everything"
+)
 
-cat("Avg Train Accuracy: ", round(avg_train_acc, 4), "\n")
-cat("Avg Val Accuracy:   ", round(avg_val_acc, 4), "\n")
-cat("Overfitting Gap:    ", round(gap, 4), "\n")
-cat("----------------------------------------\n")
+print(cm)
 
-if(gap > 0.05) {
-  cat("WARNING: High Overfitting. Increase Dropout.\n")
-} else if(avg_train_acc < 0.70) {
-  cat("WARNING: Underfitting. Increase Units/Layers.\n")
-} else {
-  cat("STATUS: Good candidate architecture.\n")
-}
+# Extract key metrics for report
+list(
+  val_accuracy = cm$overall["Accuracy"],
+  val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
+  val_bal_acc  = mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE),
+  epochs_run   = length(history$metrics$loss)
+)

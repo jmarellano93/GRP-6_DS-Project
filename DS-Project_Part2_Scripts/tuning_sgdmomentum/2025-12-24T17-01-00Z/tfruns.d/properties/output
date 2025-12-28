@@ -1,0 +1,38 @@
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    0    1    2    3    4    5    6    7
+         0    0    0    0    0    0    0    0    0
+         1    0    0    0    0    0    0    0    0
+         2  866  267 7778  928  103   29   17   53
+         3    1    3   28   45    0    0    0    2
+         4    0    0    0    0    0    0    0    0
+         5    0    0    0    0    0    0    0    0
+         6    0    0    0    0    0    0    0    0
+         7    0    0    0    0    0    0    0    0
+
+Overall Statistics
+                                          
+               Accuracy : 0.773           
+                 95% CI : (0.7647, 0.7812)
+    No Information Rate : 0.7713          
+    P-Value [Acc > NIR] : 0.3487          
+                                          
+                  Kappa : 0.0297          
+                                          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: 0 Class: 1 Class: 2 Class: 3 Class: 4 Class: 5 Class: 6 Class: 7
+Sensitivity           0.00000  0.00000  0.99641 0.046249  0.00000 0.000000  0.00000 0.000000
+Specificity           1.00000  1.00000  0.02204 0.996283  1.00000 1.000000  1.00000 1.000000
+Pos Pred Value            NaN      NaN  0.77462 0.569620      NaN      NaN      NaN      NaN
+Neg Pred Value        0.91433  0.97332  0.64557 0.907579  0.98982 0.997134  0.99832 0.994565
+Precision                  NA       NA  0.77462 0.569620       NA       NA       NA       NA
+Recall                0.00000  0.00000  0.99641 0.046249  0.00000 0.000000  0.00000 0.000000
+F1                         NA       NA  0.87163 0.085551       NA       NA       NA       NA
+Prevalence            0.08567  0.02668  0.77134 0.096146  0.01018 0.002866  0.00168 0.005435
+Detection Rate        0.00000  0.00000  0.76858 0.004447  0.00000 0.000000  0.00000 0.000000
+Detection Prevalence  0.00000  0.00000  0.99219 0.007806  0.00000 0.000000  0.00000 0.000000
+Balanced Accuracy     0.50000  0.50000  0.50923 0.521266  0.50000 0.500000  0.50000 0.500000

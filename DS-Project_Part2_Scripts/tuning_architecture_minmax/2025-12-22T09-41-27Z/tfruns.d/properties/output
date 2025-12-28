@@ -1,0 +1,121 @@
+
+> # Assignment 2 MLP: SMOTE + Train/Val/Test Split
+> # Architecture: Batch Norm + ReLU + SGD + Variable Depth
+> 
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(smotefamily)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Architecture
++   flag_integer("units1", 512),
++   .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Proj ..." ... [TRUNCATED] 
+
+> target_col <- "target_class" 
+
+> # 3. Stratified Split (Train / Val / Test) -------------------------------
+> set.seed(42)
+
+> y_factor <- factor(data[[target_col]])
+
+> # Step A: Create Test Set (15%)
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> # Step B: Create Val Set (15% of total ~ 17.6% of remainder)
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> # 4. Preprocessing (MinMax Scaling) --------------------------------------
+> # Extract X matrices
+> x_train_raw <- as.matrix(mutate(train_data %>% s .... [TRUNCATED] 
+
+> x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> # Prepare One-Hot Targets
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+
+> y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+> # Scale Features (Fit on Train, Apply to Train & Val)
+> scaler <- preProcess(x_train_raw, method = c("zv", "range"))
+
+> x_train_scaled <- predict(scaler, x_train_raw)
+
+> x_val_scaled   <- predict(scaler, x_val_raw)
+
+> # 5. SMOTE Balancing (Train Set Only) ------------------------------------
+> cat("Running SMOTE on Training Set... (This may take a moment)\n")
+Running SMOTE on Training Set... (This may take a moment)
+
+> # A. Prepare Data for SMOTE (Needs integer target, not One-Hot)
+> y_train_indices <- apply(y_train, 1, which.max) - 1
+
+> # B. Combine X and Y into a data frame
+> train_df <- as.data.frame(x_train_scaled)
+
+> train_df$class <- as.factor(y_train_indices)
+
+> # C. Run SMOTE
+> # dup_size = 0 means auto-detect amount needed to balance
+> smote_output <- SMOTE(X = train_df[, -ncol(train_df)], 
++               .... [TRUNCATED] 
+
+> # D. Extract Balanced Data
+> balanced_data <- smote_output$data
+
+> target_col_idx <- ncol(balanced_data)
+
+> x_train_final <- as.matrix(balanced_data[, -target_col_idx])
+
+> # E. Convert Target back to One-Hot
+> y_balanced_vec <- as.integer(as.character(balanced_data[, target_col_idx]))
+
+> y_train_final  <- to_categorical(y_balanced_vec, num_classes = 8)
+
+> cat("Original Train Size:", nrow(x_train_scaled), "\n")
+Original Train Size: 47280 
+
+> cat("SMOTE Train Size:   ", nrow(x_train_final), "\n")
+SMOTE Train Size:    94364 
+
+> # 6. Define Model (BN + ReLU + Dropout) ----------------------------------
+> model <- keras_model_sequential() %>%
++   # Layer 1
++   layer_dense(uni .... [TRUNCATED] 
+
+> # Layer 3 (Conditional)
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
++     layer_b .... [TRUNCATED] 
+
+> # Output Layer
+> model <- model %>%
++   layer_dense(units = 8, activation = "softmax")
+
+> # 7. Compile (SGD with Momentum) -----------------------------------------
+> model %>% compile(
++   loss = "categorical_crossentropy",
++   optimizer .... [TRUNCATED] 
+
+> # 8. Train (Early Stopping) ----------------------------------------------
+> # Note: We use x_train_final (SMOTE) for training, but x_val_scaled (Or .... [TRUNCATED] 

@@ -1,0 +1,170 @@
+
+> # Assignment 2 MLP: Manual Class Weighting + Train/Val/Test Split
+> # Architecture: Batch Norm + ReLU + SGD + Variable Depth
+> 
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Architecture
++   flag_integer("units1", 512),
++   .... [TRUNCATED] 
+
+> # 2. Load & Prepare Data -------------------------------------------------
+> # (Assuming 'data' is loaded in your environment)
+> target_col <- "targ ..." ... [TRUNCATED] 
+
+> # 3. Stratified Split (Train / Val / Test) -------------------------------
+> set.seed(42)
+
+> y_factor <- factor(data[[target_col]])
+
+> # Step A: Create Test Set (15%)
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> # Step B: Create Val Set from the remainder (15% of total ~ 17.6% of remain)
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> # 4. Preprocessing (MinMax Scaling) --------------------------------------
+> # Extract X matrices
+> x_train_raw <- as.matrix(mutate(train_data %>% s .... [TRUNCATED] 
+
+> x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> # Prepare One-Hot Targets
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+
+> y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+> # Scale Features (Fit on Train, Apply to Train & Val)
+> # "zv" removes zero variance, "range" scales to 0-1
+> scaler <- preProcess(x_train_raw, meth .... [TRUNCATED] 
+
+> x_train <- predict(scaler, x_train_raw)
+
+> x_val   <- predict(scaler, x_val_raw)
+
+> # 5. Define MANUAL Class Weights -----------------------------------------
+> # EDIT HERE: Assign specific weights to each class (0-7).
+> # - Higher  .... [TRUNCATED] 
+
+> cat("Manual Class Weights applied:\n")
+Manual Class Weights applied:
+
+> print(unlist(class_weights_list))
+  0   1   2   3   4   5   6   7 
+1.0 1.0 0.5 1.5 3.0 4.0 5.0 5.0 
+
+> # 6. Define Model (BN + ReLU + Dropout) ----------------------------------
+> model <- keras_model_sequential() %>%
++   # Layer 1
++   layer_dense(uni .... [TRUNCATED] 
+
+> # Layer 3 (Conditional)
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
++     layer_b .... [TRUNCATED] 
+
+> # Output Layer
+> model <- model %>%
++   layer_dense(units = 8, activation = "softmax")
+
+> # 7. Compile (SGD with Momentum) -----------------------------------------
+> model %>% compile(
++   loss = "categorical_crossentropy",
++   optimizer .... [TRUNCATED] 
+
+> # 8. Train (Early Stopping + Class Weights) ------------------------------
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epoc .... [TRUNCATED] 
+
+> # 9. Evaluation ----------------------------------------------------------
+> # Make predictions
+> val_probs <- model %>% predict(x_val, verbose = 0)
+
+> val_preds <- apply(val_probs, 1, which.max) - 1
+
+> val_true  <- apply(y_val, 1, which.max) - 1
+
+> # Generate Confusion Matrix
+> cm <- confusionMatrix(
++   factor(val_preds, levels = 0:7), 
++   factor(val_true, levels = 0:7), 
++   mode = "everythi ..." ... [TRUNCATED] 
+
+> print(cm)
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    0    1    2    3    4    5    6    7
+         0  528   13  186   28    3    1    0    3
+         1   13  146   68    4    1    0    0    2
+         2  274   82 7172  291   38    8    6   15
+         3   42   22  306  641    5    4    2    5
+         4    4    3   44    2   56    0    0    0
+         5    1    1    4    1    0   15    0    0
+         6    0    1   10    1    0    0    9    0
+         7    5    2   17    5    0    1    0   30
+
+Overall Statistics
+                                          
+               Accuracy : 0.8494          
+                 95% CI : (0.8423, 0.8563)
+    No Information Rate : 0.7714          
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.6058          
+                                          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: 0 Class: 1 Class: 2 Class: 3 Class: 4 Class: 5  Class: 6 Class: 7
+Sensitivity           0.60900  0.54074   0.9187  0.65879 0.543689 0.517241 0.5294118 0.545455
+Specificity           0.97471  0.99107   0.6914  0.95780 0.994710 0.999306 0.9988124 0.997020
+Pos Pred Value        0.69291  0.62393   0.9095  0.62415 0.513761 0.681818 0.4285714 0.500000
+Neg Pred Value        0.96378  0.98746   0.7159  0.96349 0.995306 0.998614 0.9992079 0.997515
+Precision             0.69291  0.62393   0.9095  0.62415 0.513761 0.681818 0.4285714 0.500000
+Recall                0.60900  0.54074   0.9187  0.65879 0.543689 0.517241 0.5294118 0.545455
+F1                    0.64825  0.57937   0.9140  0.64100 0.528302 0.588235 0.4736842 0.521739
+Prevalence            0.08566  0.02668   0.7714  0.09614 0.010177 0.002865 0.0016797 0.005434
+Detection Rate        0.05217  0.01443   0.7086  0.06333 0.005533 0.001482 0.0008892 0.002964
+Detection Prevalence  0.07529  0.02312   0.7792  0.10147 0.010770 0.002174 0.0020749 0.005928
+Balanced Accuracy     0.79186  0.76590   0.8051  0.80830 0.769199 0.758274 0.7641121 0.771237
+
+> # Extract key metrics for report
+> list(
++   val_accuracy = cm$overall["Accuracy"],
++   val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
++   v .... [TRUNCATED] 
+$val_accuracy
+Accuracy 
+0.849422 
+
+$val_f1
+[1] 0.6118268
+
+$val_bal_acc
+[1] 0.7792413
+
+$epochs_run
+[1] 654
+

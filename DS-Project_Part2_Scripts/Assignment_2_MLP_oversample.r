@@ -1,11 +1,5 @@
 # ==============================================================================
-# STEP 2: DATA BALANCING (SIMPLE OVERSAMPLING)
-# 
-# CHANGE LOG:
-# 1. Implemented 'Simple Oversampling' inside the cross-validation loop.
-#    - We use caret::upSample to duplicate minority class examples in the TRAIN set.
-#    - This forces the model to learn them, improving Macro F1 and Recall.
-# 2. Validation data remains UNTOUCHED (imbalanced) to ensure honest evaluation.
+# DATA BALANCING (SIMPLE OVERSAMPLING)
 # ==============================================================================
 
 # Assignment 2 MLP (Multi-Layer Perceptron)
@@ -26,16 +20,16 @@ FLAGS <- flags(
   # Architecture
   flag_integer("units1", 256),
   flag_integer("units2", 128),
-  flag_integer("units3", 64),     # New: 0 = "Off" (2 Layers), >0 = "On" (3 Layers)
+  flag_integer("units3", 0),     # New: 0 = "Off" (2 Layers), >0 = "On" (3 Layers)
   
   # Optimization
   flag_numeric("learning_rate", 0.001),
-  flag_integer("batch_size", 128),
-  flag_integer("epochs", 100)
+  flag_integer("batch_size", 32),
+  flag_integer("epochs", 1000)
 )
 
 # 2. Load & Prepare Data -------------------------------------------------
-data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/Assignment_2_cleaned.csv")
+# (Assuming 'data' is loaded in your environment)
 target_col <- "target_class" 
 
 x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()

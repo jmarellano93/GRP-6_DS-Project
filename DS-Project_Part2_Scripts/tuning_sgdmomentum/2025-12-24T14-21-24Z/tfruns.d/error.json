@@ -1,0 +1,4 @@
+{
+  "message": "Assignment_2_MLP_minmax.r:16:3: unexpected symbol\n15:   flag_numeric(\"weight_decay\", 0)\n16:   flag_numeric\n      ^",
+  "traceback": "tuning_run(\"Assignment_2_MLP_minmax.r\", runs_dir = \"tuning_sgdmomentum\", \n    flags = runs_grid, sample = 1, echo = FALSE)"
+}

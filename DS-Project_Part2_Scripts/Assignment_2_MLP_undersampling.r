@@ -1,3 +1,6 @@
+# Assignment 2 MLP: Undersampling + Train/Val/Test Split
+# Architecture: Batch Norm + ReLU + SGD + Variable Depth
+
 library(keras3)
 library(caret)
 library(dplyr)
@@ -6,52 +9,58 @@ library(tensorflow)
 
 # 1. Hyperparameter flags ------------------------------------------------
 FLAGS <- flags(
-  flag_integer("units1", 128),
-  flag_integer("units2", 64),
-  flag_integer("units3", 0),
-  flag_numeric("dropout1", 0.0),
-  flag_numeric("dropout2", 0.0),
-  flag_numeric("dropout3", 0.0),
-  flag_numeric("weight_decay", 0.05),
-  flag_numeric("momentum", 0.9),
-  flag_numeric("learning_rate", 0.01),
-  flag_integer("batch_size", 64),
-  flag_integer("epochs", 5000)
+  # Architecture
+  flag_integer("units1", 512),
+  flag_integer("units2", 256),
+  flag_integer("units3", 0),       # 0 = Disabled
+  
+  # Regularization
+  flag_numeric("dropout1", 0), 
+  flag_numeric("dropout2", 0),
+  flag_numeric("dropout3", 0.0),   
+  
+  # Optimization (SGD Settings)
+  flag_numeric("learning_rate", 0.001), 
+  flag_numeric("momentum", 0.9),       
+  flag_integer("batch_size", 32),
+  flag_integer("epochs", 1000),    
+  flag_integer("patience", 200),
+  
+  # Undersampling Specific
+  flag_integer("max_samples_per_class", 5000) # Cap for majority classes
 )
 
-# 2. Load Data -----------------------------------------------------------
-data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/Assignment_2_cleaned_v2.csv")
-target_col <- "target_class"
+# 2. Load & Prepare Data -------------------------------------------------
+# (Assuming 'data' is loaded in your environment)
+target_col <- "target_class" 
 
-# 3. Stratified Split Data (Original Distribution) -----------------------
+# 3. Stratified Split (Train / Val / Test) -------------------------------
 set.seed(42)
-y_factor <- as.factor(data[[target_col]])
+y_factor <- factor(data[[target_col]])
 
-# Create Test Set (15%)
+# Step A: Create Test Set (15%)
 test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
 test_data <- data[test_idx, ]
 remain_data <- data[-test_idx, ]
 
-# Create Validation Set (15% of total)
+# Step B: Create Val Set (15% of total ~ 17.6% of remainder)
 val_p <- 0.15 / 0.85
-val_idx <- createDataPartition(as.factor(remain_data[[target_col]]), p = val_p, list = FALSE)
-val_data <- remain_data[val_idx, ]
-train_data_raw <- remain_data[-val_idx, ]
+val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
 
-# --- 3.5 UNDERSAMPLING THE MAJORITY ---
+val_data       <- remain_data[val_idx, ]
+train_data_raw <- remain_data[-val_idx, ] # "Raw" because we will undersample it
+
+# --- 3.5 UNDERSAMPLING THE MAJORITY -------------------------------------
 # We ONLY undersample the training data. Validation and Test must remain realistic.
 cat("Original Training Distribution:\n")
 print(table(train_data_raw[[target_col]]))
 
-# Strategy: Keep all minority samples, but cap the majority (Class 1 and 0)
-# Adjust these numbers to control how aggressive the undersampling is
-max_samples_per_class <- 5000 
-
+# Strategy: Group by class, randomly sample down to 'max_samples_per_class'
 train_data <- train_data_raw %>%
   group_by(!!sym(target_col)) %>%
   group_modify(~ {
-    if (nrow(.x) > max_samples_per_class) {
-      .x[sample(1:nrow(.x), max_samples_per_class), ]
+    if (nrow(.x) > FLAGS$max_samples_per_class) {
+      .x[sample(1:nrow(.x), FLAGS$max_samples_per_class), ]
     } else {
       .x
     }
@@ -61,83 +70,92 @@ train_data <- train_data_raw %>%
 cat("\nUndersampled Training Distribution:\n")
 print(table(train_data[[target_col]]))
 
-# Convert to matrices for Keras
-x_train_raw <- as.matrix(train_data %>% select(-all_of(target_col)))
-y_train     <- to_categorical(train_data[[target_col]], num_classes = 7)
+# 4. Preprocessing (MinMax Scaling) --------------------------------------
+x_train_raw <- as.matrix(mutate(train_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
 
-x_val_raw   <- as.matrix(val_data %>% select(-all_of(target_col)))
-y_val       <- to_categorical(val_data[[target_col]], num_classes = 7)
+y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
 
-x_test_raw  <- as.matrix(test_data %>% select(-all_of(target_col)))
-y_test      <- to_categorical(test_data[[target_col]], num_classes = 7)
+# Scale Features (Fit on Train, Apply to Train & Val)
+scaler <- preProcess(x_train_raw, method = c("zv", "range"))
 
-# 4. Preprocessing (Robust Scaling) --------------------------------------
-continuous_cols <- colnames(x_train_raw)[apply(x_train_raw, 2, function(x) !all(x %in% c(0, 1)))]
+x_train <- predict(scaler, x_train_raw)
+x_val   <- predict(scaler, x_val_raw)
 
-scaler <- preProcess(x_train_raw[, continuous_cols], method = c("zv", "center", "scale"))
-
-x_train <- x_train_raw
-x_val   <- x_val_raw
-x_test  <- x_test_raw
-
-x_train[, continuous_cols] <- predict(scaler, x_train_raw[, continuous_cols])
-x_val[, continuous_cols]   <- predict(scaler, x_val_raw[, continuous_cols])
-x_test[, continuous_cols]  <- predict(scaler, x_test_raw[, continuous_cols])
-
-# 5. Define Model --------------------------------------------------------
+# 5. Define Model (BN + ReLU + Dropout) ----------------------------------
 model <- keras_model_sequential() %>%
-  layer_dense(units = FLAGS$units1, activation = "relu", input_shape = c(ncol(x_train))) %>%
-  layer_dropout(rate = FLAGS$dropout1) %>%
-  layer_dense(units = FLAGS$units2, activation = "relu") %>%
-  layer_dropout(rate = FLAGS$dropout2)
+  # Layer 1
+  layer_dense(units = FLAGS$units1, input_shape = c(ncol(x_train)), use_bias = FALSE) %>%
+  layer_batch_normalization() %>%  
+  layer_activation("relu") %>%
+  layer_dropout(FLAGS$dropout1) %>%
+  # Layer 2
+  layer_dense(units = FLAGS$units2, use_bias = FALSE) %>%
+  layer_batch_normalization() %>%
+  layer_activation("relu") %>%
+  layer_dropout(FLAGS$dropout2)
 
+# Layer 3 (Conditional)
 if (FLAGS$units3 > 0) {
   model <- model %>%
-    layer_dense(units = FLAGS$units3, activation = 'relu') %>%
-    layer_dropout(rate = FLAGS$dropout3) 
+    layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
+    layer_batch_normalization() %>%
+    layer_activation("relu") %>%
+    layer_dropout(FLAGS$dropout3)
 }
 
-model <- model %>% layer_dense(units = 7, activation = 'softmax')
+# Output Layer
+model <- model %>%
+  layer_dense(units = 8, activation = "softmax")
 
-# 6. Compile & Train (NO CLASS WEIGHTS) ----------------------------------
+# 6. Compile (SGD with Momentum) -----------------------------------------
 model %>% compile(
-  loss = 'categorical_crossentropy',
+  loss = "categorical_crossentropy",
   optimizer = optimizer_sgd(
-    learning_rate = FLAGS$learning_rate, 
-    momentum = FLAGS$momentum
+    learning_rate = FLAGS$learning_rate,
+    momentum = FLAGS$momentum,
+    nesterov = TRUE
   ),
-  metrics = c('accuracy')
+  metrics = list("accuracy")
 )
 
-# --- DIAGNOSTIC CALLBACK ---
-callback_weightnorm_f1 <- callback_lambda(
-  on_epoch_end = function(epoch, logs) {
-    if (epoch %% 100 == 0) {
-      val_probs <- model %>% predict(x_val, verbose = 0)
-      val_preds <- apply(val_probs, 1, which.max) - 1
-      val_true  <- apply(y_val, 1, which.max) - 1
-      
-      cm <- confusionMatrix(factor(val_preds, levels = 0:6), factor(val_true, levels = 0:6), mode = "everything")
-      cat(sprintf("\nEPOCH %d | Macro F1: %.4f | Bal Acc: %.4f\n", epoch + 1, mean(cm$byClass[, "F1"], na.rm = TRUE), mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)))
-    }
-  }
-)
-
+# 7. Train (Early Stopping) ----------------------------------------------
 history <- model %>% fit(
   x_train, y_train,
-  epochs = FLAGS$epochs,          
-  batch_size = FLAGS$batch_size,        
+  epochs = FLAGS$epochs,
+  batch_size = FLAGS$batch_size,
   validation_data = list(x_val, y_val),
-  callbacks = list(callback_weightnorm_f1) # Class Weights removed here
+  verbose = 0,
+  callbacks = list(
+    callback_early_stopping(
+      monitor = "val_accuracy", 
+      patience = FLAGS$patience, 
+      restore_best_weights = TRUE,
+      verbose = 1
+    )
+  )
 )
 
-# 7. Final Report --------------------------------------------------------
+# 8. Evaluation ----------------------------------------------------------
+# Make predictions
 val_probs <- model %>% predict(x_val, verbose = 0)
 val_preds <- apply(val_probs, 1, which.max) - 1
 val_true  <- apply(y_val, 1, which.max) - 1
-cm <- confusionMatrix(factor(val_preds, levels = 0:6), factor(val_true, levels = 0:6), mode = "everything")
 
+# Generate Confusion Matrix
+cm <- confusionMatrix(
+  factor(val_preds, levels = 0:7), 
+  factor(val_true, levels = 0:7), 
+  mode = "everything"
+)
+
+print(cm)
+
+# Extract key metrics for report
 list(
-  val_f1 = mean(cm$byClass[, "F1"], na.rm = TRUE),
-  val_bal_acc = mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+  val_accuracy = cm$overall["Accuracy"],
+  val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
+  val_bal_acc  = mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE),
+  epochs_run   = length(history$metrics$loss)
 )

@@ -1,0 +1,192 @@
+
+> # Assignment 2 MLP: SMOTE 
+> 
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(smotefamily)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   # Architecture
++   flag_integer("units1", 512),
++   .... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> # (Assuming 'data' is loaded in your environment)
+> target_col <- "targ ..." ... [TRUNCATED] 
+
+> # 3. Stratified Split (Train / Val / Test) -------------------------------
+> set.seed(42)
+
+> y_factor <- factor(data[[target_col]])
+
+> # Step A: Create Test Set (15%)
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> # Step B: Create Val Set (15% of total ~ 17.6% of remainder)
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> # 4. Preprocessing (MinMax Scaling) --------------------------------------
+> # Extract X matrices
+> x_train_raw <- as.matrix(mutate(train_data %>% s .... [TRUNCATED] 
+
+> x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> # Prepare One-Hot Targets
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+
+> y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+> # Scale Features (Fit on Train, Apply to Train & Val)
+> scaler <- preProcess(x_train_raw, method = c("zv", "range"))
+
+> x_train_scaled <- predict(scaler, x_train_raw)
+
+> x_val_scaled   <- predict(scaler, x_val_raw)
+
+> # 5. SMOTE Balancing (Train Set Only) ------------------------------------
+> cat("Running SMOTE on Training Set... (This may take a moment)\n")
+Running SMOTE on Training Set... (This may take a moment)
+
+> # A. Prepare Data for SMOTE (Needs integer target, not One-Hot)
+> y_train_indices <- apply(y_train, 1, which.max) - 1
+
+> # B. Combine X and Y into a data frame
+> train_df <- as.data.frame(x_train_scaled)
+
+> train_df$class <- as.factor(y_train_indices)
+
+> # C. Run SMOTE
+> # dup_size = 0 means auto-detect amount needed to balance
+> smote_output <- SMOTE(X = train_df[, -ncol(train_df)], 
++               .... [TRUNCATED] 
+
+> # D. Extract Balanced Data
+> balanced_data <- smote_output$data
+
+> target_col_idx <- ncol(balanced_data)
+
+> x_train_final <- as.matrix(balanced_data[, -target_col_idx])
+
+> # E. Convert Target back to One-Hot
+> y_balanced_vec <- as.integer(as.character(balanced_data[, target_col_idx]))
+
+> y_train_final  <- to_categorical(y_balanced_vec, num_classes = 8)
+
+> cat("Original Train Size:", nrow(x_train_scaled), "\n")
+Original Train Size: 47212 
+
+> cat("SMOTE Train Size:   ", nrow(x_train_final), "\n")
+SMOTE Train Size:    94217 
+
+> # 6. Define Model (BN + ReLU + Dropout) ----------------------------------
+> model <- keras_model_sequential() %>%
++   # Layer 1
++   layer_dense(uni .... [TRUNCATED] 
+
+> # Layer 3 (Conditional)
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
++     layer_b .... [TRUNCATED] 
+
+> # Output Layer
+> model <- model %>%
++   layer_dense(units = 8, activation = "softmax")
+
+> # 7. Compile (SGD with Momentum) -----------------------------------------
+> model %>% compile(
++   loss = "categorical_crossentropy",
++   optimizer .... [TRUNCATED] 
+
+> # 8. Train (Early Stopping) ----------------------------------------------
+> # Note: We use x_train_final (SMOTE) for training, but x_val_scaled (Or .... [TRUNCATED] 
+
+> # 9. Evaluation ----------------------------------------------------------
+> # Make predictions on Validation Set
+> val_probs <- model %>% predict(x .... [TRUNCATED] 
+
+> val_preds <- apply(val_probs, 1, which.max) - 1
+
+> val_true  <- apply(y_val, 1, which.max) - 1
+
+> # Generate Confusion Matrix
+> cm <- confusionMatrix(
++   factor(val_preds, levels = 0:7), 
++   factor(val_true, levels = 0:7), 
++   mode = "everythi ..." ... [TRUNCATED] 
+
+> print(cm)
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    0    1    2    3    4    5    6    7
+         0  519   11  140   30    6    1    0    3
+         1   10  136   58   10    4    0    0    1
+         2  288  105 7327  319   41   12    8   20
+         3   47   14  238  611    5    4    0    1
+         4    2    2   21    2   47    0    0    1
+         5    0    0    3    0    0   12    0    0
+         6    0    1   11    1    0    0    9    0
+         7    1    1    9    0    0    0    0   29
+
+Overall Statistics
+                                          
+               Accuracy : 0.8586          
+                 95% CI : (0.8517, 0.8653)
+    No Information Rate : 0.7714          
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.6134          
+                                          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: 0 Class: 1 Class: 2 Class: 3 Class: 4 Class: 5  Class: 6 Class: 7
+Sensitivity           0.59862  0.50370   0.9385  0.62795 0.456311 0.413793 0.5294118 0.527273
+Specificity           0.97936  0.99157   0.6573  0.96622 0.997205 0.999703 0.9987134 0.998907
+Pos Pred Value        0.73099  0.62100   0.9023  0.66413 0.626667 0.800000 0.4090909 0.725000
+Neg Pred Value        0.96302  0.98647   0.7601  0.96066 0.994426 0.998318 0.9992078 0.997421
+Precision             0.73099  0.62100   0.9023  0.66413 0.626667 0.800000 0.4090909 0.725000
+Recall                0.59862  0.50370   0.9385  0.62795 0.456311 0.413793 0.5294118 0.527273
+F1                    0.65821  0.55624   0.9201  0.64554 0.528090 0.545455 0.4615385 0.610526
+Prevalence            0.08566  0.02668   0.7714  0.09614 0.010177 0.002865 0.0016797 0.005434
+Detection Rate        0.05128  0.01344   0.7239  0.06037 0.004644 0.001186 0.0008892 0.002865
+Detection Prevalence  0.07015  0.02164   0.8023  0.09090 0.007410 0.001482 0.0021737 0.003952
+Balanced Accuracy     0.78899  0.74764   0.7979  0.79709 0.726758 0.706748 0.7640626 0.763090
+
+> # Extract key metrics for report
+> list(
++   val_accuracy = cm$overall["Accuracy"],
++   val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
++   v .... [TRUNCATED] 
+$val_accuracy
+ Accuracy 
+0.8586108 
+
+$val_f1
+[1] 0.6157084
+
+$val_bal_acc
+[1] 0.7615355
+
+$epochs_run
+[1] 392
+

@@ -1,0 +1,4 @@
+{
+  "message": "The following flags were provided but not declared: weight_decay",
+  "traceback": ["stop(\"The following flags were provided but not declared: \", \n    paste(undeclared, collapse = \", \"), call. = FALSE)", "parse_flags(FLAGS, config, file, arguments)", "flags(flag_integer(\"units1\", 512), flag_integer(\"units2\", 256), \n    flag_integer(\"units3\", 0), flag_numeric(\"dropout1\", 0.5), \n    flag_numeric(\"dropout2\", 0.3), flag_numeric(\"dropout3\", 0), \n    flag_numeric(\"learning_rate\", 5e-04), flag_numeric(\"momentum\", \n        0.9), flag_integer(\"batch_size\", 32), flag_integer(\"epochs\", \n        2500), flag_integer(\"patience\", 200))", "eval(ei, envir)", "eval(ei, envir)", "withVisible(eval(ei, envir))", "tuning_run(\"Assignment_2_MLP_minmax.r\", runs_dir = \"tuning_adamw\", \n    flags = runs_grid, sample = 1, echo = FALSE)"]
+}

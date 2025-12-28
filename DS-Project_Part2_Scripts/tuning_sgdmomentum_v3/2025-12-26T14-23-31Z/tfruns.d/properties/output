@@ -1,0 +1,38 @@
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    0    1    2    3    4    5    6    7
+         0    0    0    0    0    0    0    0    0
+         1    0    0    0    0    0    0    0    0
+         2  867  270 7806  972  103   29   17   55
+         3    0    0    0    1    0    0    0    0
+         4    0    0    0    0    0    0    0    0
+         5    0    0    0    0    0    0    0    0
+         6    0    0    0    0    0    0    0    0
+         7    0    0    0    0    0    0    0    0
+
+Overall Statistics
+                                          
+               Accuracy : 0.7714          
+                 95% CI : (0.7631, 0.7796)
+    No Information Rate : 0.7713          
+    P-Value [Acc > NIR] : 0.4961          
+                                          
+                  Kappa : 7e-04           
+                                          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: 0 Class: 1  Class: 2  Class: 3 Class: 4 Class: 5 Class: 6 Class: 7
+Sensitivity           0.00000  0.00000 1.0000000 1.028e-03  0.00000 0.000000  0.00000 0.000000
+Specificity           1.00000  1.00000 0.0004322 1.000e+00  1.00000 1.000000  1.00000 1.000000
+Pos Pred Value            NaN      NaN 0.7714201 1.000e+00      NaN      NaN      NaN      NaN
+Neg Pred Value        0.91433  0.97332 1.0000000 9.039e-01  0.98982 0.997134  0.99832 0.994565
+Precision                  NA       NA 0.7714201 1.000e+00       NA       NA       NA       NA
+Recall                0.00000  0.00000 1.0000000 1.028e-03  0.00000 0.000000  0.00000 0.000000
+F1                         NA       NA 0.8709623 2.053e-03       NA       NA       NA       NA
+Prevalence            0.08567  0.02668 0.7713439 9.615e-02  0.01018 0.002866  0.00168 0.005435
+Detection Rate        0.00000  0.00000 0.7713439 9.881e-05  0.00000 0.000000  0.00000 0.000000
+Detection Prevalence  0.00000  0.00000 0.9999012 9.881e-05  0.00000 0.000000  0.00000 0.000000
+Balanced Accuracy     0.50000  0.50000 0.5002161 5.005e-01  0.50000 0.500000  0.50000 0.500000

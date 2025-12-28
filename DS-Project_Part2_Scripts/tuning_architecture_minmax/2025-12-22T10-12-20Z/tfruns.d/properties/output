@@ -1,0 +1,172 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tfruns)
+
+> library(tensorflow)
+
+> # 1. Hyperparameter flags ------------------------------------------------
+> FLAGS <- flags(
++   flag_integer("units1", 512),
++   flag_integer("unit ..." ... [TRUNCATED] 
+
+> # 2. Load Data -----------------------------------------------------------
+> # (Assuming 'data' is loaded in your environment)
+> target_col <- "targ ..." ... [TRUNCATED] 
+
+> # 3. Stratified Split ----------------------------------------------------
+> set.seed(42)
+
+> y_factor <- factor(data[[target_col]])
+
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ]
+
+> val_p <- 0.15 / 0.85
+
+> val_idx <- createDataPartition(factor(remain_data[[target_col]]), p = val_p, list = FALSE)
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> # 4. Preprocessing (Robust Scaler) ---------------------------------------
+> x_train_raw <- as.matrix(mutate(train_data %>% select(-all_of(target_co .... [TRUNCATED] 
+
+> x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> storage.mode(x_train_raw) <- "double"
+
+> storage.mode(x_val_raw)   <- "double"
+
+> # A. Remove Zero Variance columns first (Safety check)
+> zv_info <- preProcess(x_train_raw, method = "zv")
+
+> x_train <- predict(zv_info, x_train_raw)
+
+> x_val   <- predict(zv_info, x_val_raw)
+
+> # B. Identify continuous columns (features that are not binary 0/1)
+> continuous_cols <- colnames(x_train)[apply(x_train, 2, function(x) !all(x %in% .... [TRUNCATED] 
+
+> # C. Calculate Robust Statistics (Median & IQR) on TRAIN data
+> train_medians <- apply(x_train[, continuous_cols, drop = FALSE], 2, median)
+
+> train_iqrs    <- apply(x_train[, continuous_cols, drop = FALSE], 2, IQR)
+
+> # Safety: If IQR is 0, set to 1 to avoid division by zero
+> train_iqrs[train_iqrs == 0] <- 1
+
+> # D. Apply (X - Median) / IQR
+> # Scale Train
+> x_train[, continuous_cols] <- sweep(x_train[, continuous_cols, drop=FALSE], 2, train_medians, "-")
+
+> x_train[, continuous_cols] <- sweep(x_train[, continuous_cols, drop=FALSE], 2, train_iqrs, "/")
+
+> # Scale Val (using TRAIN statistics to prevent leakage)
+> x_val[, continuous_cols] <- sweep(x_val[, continuous_cols, drop=FALSE], 2, train_medians,  .... [TRUNCATED] 
+
+> x_val[, continuous_cols] <- sweep(x_val[, continuous_cols, drop=FALSE], 2, train_iqrs, "/")
+
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+
+> y_val   <- to_categorical(val_data[[target_col]],   num_classes = 8)
+
+> # 5. Define Model --------------------------------------------------------
+> model <- keras_model_sequential() %>%
++   # Layer 1
++   layer_dense(uni .... [TRUNCATED] 
+
+> # Layer 3 (Conditional)
+> if (FLAGS$units3 > 0) {
++   model <- model %>%
++     layer_dense(units = FLAGS$units3, use_bias = FALSE) %>%
++     layer_b .... [TRUNCATED] 
+
+> # Output Layer
+> model <- model %>%
++   layer_dense(units = 8, activation = "softmax")
+
+> # 6. Compile -------------------------------------------------------------
+> model %>% compile(
++   loss = "categorical_crossentropy",
++   optimizer .... [TRUNCATED] 
+
+> # 7. Train with Early Stopping -------------------------------------------
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs = FLAGS$epoc .... [TRUNCATED] 
+
+> # 8. Evaluation ----------------------------------------------------------
+> val_probs <- model %>% predict(x_val, verbose = 0)
+
+> val_preds <- apply(val_probs, 1, which.max) - 1
+
+> val_true  <- apply(y_val, 1, which.max) - 1
+
+> cm <- confusionMatrix(factor(val_preds, levels = 0:7), factor(val_true, levels = 0:7), mode = "everything")
+
+> print(cm)
+Confusion Matrix and Statistics
+
+          Reference
+Prediction    0    1    2    3    4    5    6    7
+         0  131   16   47   10    3    0    0    0
+         1    8  524  144   42    1    1    0    2
+         2  110  274 7423  362   35    9    7   25
+         3   17   45  167  552    4    2    1    3
+         4    2    3   20    6   63    0    0    2
+         5    2    0    4    0    1   18    0    0
+         6    0    1    3    0    0    0    9    0
+         7    1    4    7    1    0    0    0   24
+
+Overall Statistics
+                                          
+               Accuracy : 0.8627          
+                 95% CI : (0.8558, 0.8693)
+    No Information Rate : 0.771           
+    P-Value [Acc > NIR] : < 2.2e-16       
+                                          
+                  Kappa : 0.617           
+                                          
+ Mcnemar's Test P-Value : NA              
+
+Statistics by Class:
+
+                     Class: 0 Class: 1 Class: 2 Class: 3 Class: 4 Class: 5  Class: 6 Class: 7
+Sensitivity           0.48339  0.60438   0.9498  0.56732 0.588785 0.600000 0.5294118 0.428571
+Specificity           0.99230  0.97864   0.6458  0.97392 0.996710 0.999307 0.9996047 0.998710
+Pos Pred Value        0.63285  0.72576   0.9003  0.69785 0.656250 0.720000 0.6923077 0.648649
+Neg Pred Value        0.98590  0.96356   0.7927  0.95495 0.995618 0.998813 0.9992097 0.996831
+Precision             0.63285  0.72576   0.9003  0.69785 0.656250 0.720000 0.6923077 0.648649
+Recall                0.48339  0.60438   0.9498  0.56732 0.588785 0.600000 0.5294118 0.428571
+F1                    0.54812  0.65953   0.9244  0.62585 0.620690 0.654545 0.6000000 0.516129
+Prevalence            0.02674  0.08554   0.7710  0.09599 0.010556 0.002960 0.0016772 0.005525
+Detection Rate        0.01292  0.05170   0.7323  0.05446 0.006215 0.001776 0.0008879 0.002368
+Detection Prevalence  0.02042  0.07123   0.8134  0.07804 0.009471 0.002466 0.0012826 0.003650
+Balanced Accuracy     0.73785  0.79151   0.7978  0.77062 0.792747 0.799654 0.7645082 0.713641
+
+> list(
++   val_accuracy = cm$overall["Accuracy"],
++   val_f1       = mean(cm$byClass[, "F1"], na.rm = TRUE),
++   val_bal_acc  = mean(cm$byClass[, "Ba ..." ... [TRUNCATED] 
+$val_accuracy
+ Accuracy 
+0.8626677 
+
+$val_f1
+[1] 0.6436593
+
+$val_bal_acc
+[1] 0.7710456
+
+$epochs_trained
+[1] 717
+

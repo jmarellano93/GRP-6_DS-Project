@@ -1,0 +1,162 @@
+
+> library(keras3)
+
+> library(caret)
+
+> library(dplyr)
+
+> library(tensorflow)
+
+> # --- 1. CHAMPION CONFIGURATION (SGD + Momentum) -------------------------
+> HYPER <- list(
++   units1 = 128,
++   units2 = 64,
++   learning_rate = 0 .... [TRUNCATED] 
+
+> SEED_VAL <- 42
+
+> # --- 2. LOAD DATA -------------------------------------------------------
+> if (!exists("data")) {
++   if (file.exists("project_data.RData")) {
++   .... [TRUNCATED] 
+
+> target_col <- "target_class"
+
+> set.seed(SEED_VAL)
+
+> # --- 3. THE "SAFE" STRATIFIED SPLIT -------------------------------------
+> y_factor <- factor(data[[target_col]])
+
+> # Step A: Lock away 15% for FINAL TEST (The "Exam")
+> test_idx <- createDataPartition(y_factor, p = 0.15, list = FALSE)
+
+> test_data  <- data[test_idx, ]
+
+> remain_data <- data[-test_idx, ] # 85% of original data
+
+> # Step B: Create a small 10% Internal Validation Set from the remainder
+> # This ensures STRATIFICATION so we don't kill the minority classes.
+> # 1 .... [TRUNCATED] 
+
+> val_data   <- remain_data[val_idx, ]
+
+> train_data <- remain_data[-val_idx, ]
+
+> cat(sprintf("Final Optimization Split:\n- TRAIN (Active Learning): %d rows (Contains ~90%% of minority classes)\n- VAL   (Early Stop Monitor): %d ro ..." ... [TRUNCATED] 
+Final Optimization Split:
+- TRAIN (Active Learning): 51594 rows (Contains ~90% of minority classes)
+- VAL   (Early Stop Monitor): 5737 rows (Stratified 10%)
+- TEST  (Final Exam):         10121 rows
+
+> # --- 4. PREPROCESSING ---------------------------------------------------
+> # Create matrices
+> x_train_raw <- as.matrix(mutate(train_data %>% sele .... [TRUNCATED] 
+
+> x_val_raw   <- as.matrix(mutate(val_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> x_test_raw  <- as.matrix(mutate(test_data %>% select(-all_of(target_col)), across(everything(), as.numeric)))
+
+> storage.mode(x_train_raw) <- "double"
+
+> storage.mode(x_val_raw)   <- "double"
+
+> storage.mode(x_test_raw)  <- "double"
+
+> continuous_cols <- colnames(x_train_raw)[apply(x_train_raw, 2, function(x) !all(x %in% c(0, 1)))]
+
+> # FIT SCALER ON TRAIN
+> # We fit on the 'train_data' to prevent leakage.
+> scaler <- preProcess(x_train_raw[, continuous_cols, drop = FALSE], method .... [TRUNCATED] 
+
+> # Save Scaler
+> saveRDS(scaler, "final_champion_scaler.rds")
+
+> # Apply Transform
+> x_train <- x_train_raw
+
+> x_val   <- x_val_raw
+
+> x_test  <- x_test_raw
+
+> x_train[, continuous_cols] <- predict(scaler, x_train_raw[, continuous_cols, drop = FALSE])
+
+> x_val[, continuous_cols]   <- predict(scaler, x_val_raw[, continuous_cols, drop = FALSE])
+
+> x_test[, continuous_cols]  <- predict(scaler, x_test_raw[, continuous_cols, drop = FALSE])
+
+> # One-Hot Encoding
+> y_train <- to_categorical(train_data[[target_col]], num_classes = 8)
+
+> y_val   <- to_categorical(val_data[[target_col]], num_classes = 8)
+
+> y_test  <- to_categorical(test_data[[target_col]], num_classes = 8)
+
+> # --- 5. MODEL DEFINITION ------------------------------------------------
+> clear_session()
+
+> l2_reg <- regularizer_l2(l = HYPER$weight_decay)
+
+> model <- keras_model_sequential() %>%
++   layer_dense(units = HYPER$units1, input_shape = c(ncol(x_train)), 
++               use_bias = FALSE, kerne .... [TRUNCATED] 
+
+> model %>% compile(
++   loss = "categorical_crossentropy",
++   optimizer = optimizer_sgd(learning_rate = HYPER$learning_rate, 
++                      .... [TRUNCATED] 
+
+> # --- 6. CALLBACKS & TRAIN -----------------------------------------------
+> callbacks_list <- list(
++   # Monitors the EXPLICIT validation set we c .... [TRUNCATED] 
+
+> cat("\nStarting Final Training (Stratified)...\n")
+
+Starting Final Training (Stratified)...
+
+> # We use 'validation_data' (Explicit) instead of 'validation_split' (Automatic/Unsafe)
+> history <- model %>% fit(
++   x_train, y_train,
++   epochs  .... [TRUNCATED] 
+
+> # --- 7. FINAL EVALUATION ------------------------------------------------
+> cat("\n--- Final Evaluation on HELD-OUT TEST SET ---\n")
+
+--- Final Evaluation on HELD-OUT TEST SET ---
+
+> probs <- predict(model, x_test, verbose = 0)
+
+> true_y <- apply(y_test, 1, which.max) - 1
+
+> preds_base <- apply(probs, 1, which.max) - 1
+
+> # Apply Champion Threshold
+> preds_tuned <- preds_base
+
+> preds_tuned[probs[, 4] > HYPER$threshold_class3] <- 3
+
+> cm <- confusionMatrix(factor(preds_tuned, levels=0:7), factor(true_y, levels=0:7))
+
+> print(cm$table)
+          Reference
+Prediction    0    1    2    3    4    5    6    7
+         0  469   18  149   37    2    0    2    7
+         1   10  104   41   10    1    0    0    1
+         2  332  128 7368  365   47   17    5   22
+         3   49   14  217  556    7    3    2    2
+         4    2    2   16    2   47    0    0    0
+         5    0    1    6    0    0    9    0    0
+         6    2    0    3    0    0    0    9    0
+         7    3    3    6    2    0    0    0   23
+
+> cat("\nTest Accuracy:", cm$overall["Accuracy"])
+
+Test Accuracy: 0.8482363
+> cat("\nClass 3 Metrics (Risk):\n")
+
+Class 3 Metrics (Risk):
+
+> print(cm$byClass["Class: 3", c("Sensitivity", "Precision", "F1")])
+Sensitivity   Precision          F1 
+  0.5720165   0.6541176   0.6103183 
+
+> save_model(model, "final_sgd_champion_model.keras")

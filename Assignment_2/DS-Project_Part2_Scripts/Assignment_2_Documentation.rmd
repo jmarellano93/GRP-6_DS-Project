@@ -1,6 +1,8 @@
 ---
 title: "Assignment_2_Documentation"
-output: pdf_document
+output:
+  pdf_document:
+    latex_engine: xelatex
 date: "2025-12-20"
 ---
 
@@ -9,6 +11,14 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 # Abstract
+
+This report documents the end-to-end development of a neural network designed to predict customer repayment behavior based on an adjusted Kaggle credit dataset. The primary objective was to classify customers into one of eight distinct behavioral categories, ranging from "paid off" to "write-offs for more than 150 days," using a supervised, non-parametric learning approach.
+
+The workflow followed a structured data science pipeline, beginning with extensive data cleaning and exploratory data analysis (EDA). Key preprocessing steps included the removal of logical anomalies (e.g., "working pensioners" with invalid employment records), the correction of impossible family structures, and the implementation of log-transformations to normalize highly skewed financial variables like income. Feature engineering further enhanced the dataset by introducing interaction terms such as "income per family member" to provide better financial context.
+
+Model selection involved a rigorous evaluation of Multi-Layer Perceptron (MLP) architectures. A systematic grid search identified an optimal topology consisting of two hidden layers (128 and 64 neurons) with Rectified Linear Unit (ReLU) activations. While initial experiments with adaptive optimizers (Adam, AdamW) showed promise, Stochastic Gradient Descent (SGD) with Momentum (learning rate 0.0001, momentum 0.9) ultimately demonstrated superior stability and generalization. To address the dataset's severe class imbalance, various techniques including SMOTE, Random Undersampling, Focal Loss, and Class Weights were tested. However, empirical results indicated that a baseline model trained on raw data, enhanced by a custom decision threshold of 0.39 for the critical "early delinquency" class, provided the best trade-off between sensitivity and precision.
+
+The final "Champion" model achieved a test accuracy of 84.76% and a test loss of 0.4996 on a dedicated 15% hold-out set. The evaluation revealed that while the model excels at distinguishing between standard repayment behavior (1-29 days past due) and severe delinquency, it exhibits a conservative bias, frequently categorizing uncertain cases into the majority class. Despite limitations in differentiating adjacent delinquency buckets, the model successfully isolates high-risk minority classes with high precision, making it a viable tool for behavioral risk forecasting.
 
 # 1. Introduction
 
@@ -73,7 +83,7 @@ Finally, the model's performance is assessed using metrics relevant to the probl
 
 In this chapter, the preprocessing pipeline is documented step-by-step. Crucially, this section reflects the iterative nature of the project. It details not only the final code but also the initial attempts that were later discarded or refined due to poor model accuracy.
 
-```{r, eval = FALSE}
+```{r}
 # Load necessary libraries
 library(tidyverse)
 library(ggplot2)
@@ -455,7 +465,7 @@ A record showing a 38-year-old with 12 children (and a family size of 14) is sta
 data <- data[data$CNT_FAM_MEMBERS <= 10, ]
 ```
 
-A mathematical constraint must exist where CNT_FAM_MEMBERS ≥ CNT_CHILDREN + 1. A validation check identified 31 instances where the total family count was strictly less than the number of children reported.
+A mathematical constraint must exist where CNT_FAM_MEMBERS \>= CNT_CHILDREN + 1. A validation check identified 31 instances where the total family count was strictly less than the number of children reported.
 
 ```{r}
 # Identify anomalous rows where children outnumber total family members
@@ -647,9 +657,9 @@ While Neural Networks are more robust to multicollinearity than linear models, i
 
 Despite the high correlation between CNT_FAM_MEMBERS and CNT_CHILDREN seen in the matrix, we keep both for the following reasons:
 
--   Latent Information:By keeping both, we allow the Neural Network to implicitly calculate the number of adults (Adults=Family Members−Children). This distinguishes between a single-parent household and a dual-parent household of the same total size.
+-   Latent Information:By keeping both, we allow the Neural Network to implicitly calculate the number of adults (Adults=Family Members-Children). This distinguishes between a single-parent household and a dual-parent household of the same total size.
 -   Interaction Effects:The network can learn complex, non-linear interactions between these two variables that a simple correlation coefficient cannot capture, such as how the financial burden of children might change depending on the total number of adults present.
--   Data Integrity:Since we have already performed deterministic imputation to ensure these columns are logically consistent (Total Family≥Children + 1), providing both features gives the network the "full picture" of the household structure.
+-   Data Integrity:Since we have already performed deterministic imputation to ensure these columns are logically consistent (Total Family\>=Children + 1), providing both features gives the network the "full picture" of the household structure.
 
 ## 3.8. Summary of Features
 
@@ -848,7 +858,7 @@ The Risk of Depth: The deeper a network gets, the more complex interactions beco
 
 The Width Strategy (Cubic vs. Funnel): We tested two shape configurations. Funnel (Pyramid): Layers decrease in size (e.g., 512 to 256 to 128). This assumes the network should compress information into higher-level abstractions. Cubic (Rectangular): Layers maintain constant width (e.g., 256 to 256 to 256).
 
-```{r eval=FALSE}
+```{r, eval=FALSE}
 # Define the Search Grid
 runs_grid <- list(
   # --- 1. ARCHITECTURE ---
@@ -883,7 +893,7 @@ runs_grid <- list(
 
 The goal of this grid search is to only see how high validation accuracy can get depending solely on the network architecture.
 
-```{r}
+```{r, eval=FALSE}
 tic()
 tuning_run("Assignment_2_MLP_minmax.r", 
            runs_dir = "tuning_architecture_sgd", 
@@ -902,7 +912,7 @@ From all the models, we will search for the model with the lowest validation los
 all_results <- ls_runs(runs_dir = "tuning_architecture_sgd")
 
 # View them in the RStudio data viewer (Sortable table)
-View(all_results)
+#View(all_results)
 
 # 3. Print just the top 5 models sorted by Validation Accuracy
 top_models <- all_results %>%
@@ -933,7 +943,7 @@ $$
 
 Here we demonstrate the difference of both scalers with the relu activation function. In the following experiment a robustscaler was used with the same architecture as above.
 
-```{r}
+```{r, eval=FALSE}
 options(tfruns.runs_dir = "tuning_scaler")
 tic()
 training_run("Assignment_2_MLP_robustscaler.r")
@@ -947,7 +957,7 @@ options(tfruns.runs_dir = NULL)
 ```{r}
 run_path <- "tuning_architecture_minmax/2025-12-22T10-12-20Zs"
 
-view_run(run_path)
+#view_run(run_path)
 ```
 
 ## 4.3. Class Imbalance Handling
@@ -1007,7 +1017,7 @@ In conclusion, the application of SMOTE resulted in a Macro F1 score of 0.616.
 
 ### 4.3.2. Data Augmentation with Cherry picking
 
-```{r eval=FALSE}
+```{r, eval=FALSE}
 # Set the "Bucket" 
 options(tfruns.runs_dir = "tuning_imbalance")
 
@@ -1130,7 +1140,7 @@ In our final experiments, we replaced standard Categorical Cross-Entropy with Fo
 
 Standard Cross-Entropy loss struggles with extreme imbalance because it is overwhelmed by the sheer volume of "easy" examples. In our dataset, Class 2 (Non-Default) comprises 77% of the data. Even if the model assigns a decent probability (e.g., 0.6) to these easy examples, the cumulative loss from thousands of them drowns out the valuable signal from the few misclassified minority examples.
 
-Focal Loss adds a modulating factor, (1−pt​)γ, to the standard loss equation.
+Focal Loss adds a modulating factor, (1-pt​)γ, to the standard loss equation.
 
 -   Effect: If the model is 99% confident in a prediction (an "easy" example), the modulating factor approaches 0. This effectively silences the loss contribution from the majority class.
 
@@ -1224,7 +1234,7 @@ Note on Methodology: Determining the optimal architecture using only one optimiz
 
 ### 4.4.1. Adam and AdamW
 
-```{r eval=FALSE}
+```{r, eval=FALSE}
 # Define the Search Grid
 runs_grid <- list(
   # --- 1. ARCHITECTURE ---
@@ -1294,7 +1304,7 @@ Hyperparameter Roles The grid search for AdamW focused on three interaction effe
 all_results <- ls_runs(runs_dir = "tuning_adamw_v2")
 
 # View them in the RStudio data viewer (Sortable table)
-View(all_results)
+#View(all_results)
 
 # 3. Print just the top 5 models sorted by Validation Accuracy
 top_models <- all_results %>%
@@ -1323,7 +1333,7 @@ Learning Rate 0.0001: The selection of a relatively low learning rate enables pr
 
 #### Regularization tuning
 
-```{r eval=FALSE}
+```{r, eval=FALSE}
 # Define the Search Grid
 runs_grid <- list(
   # --- 1. ARCHITECTURE ---
@@ -1371,7 +1381,7 @@ toc()
 all_results <- ls_runs(runs_dir = "tuning_adamw_v3")
 
 # View them in the RStudio data viewer (Sortable table)
-View(all_results)
+#View(all_results)
 
 # 3. Print just the top 5 models sorted by Validation Accuracy
 top_models <- all_results %>%
@@ -1410,7 +1420,7 @@ As shown in the loss curves (bottom panel), the validation loss (green) tracks t
 
 ![](images/clipboard-2637686626.png)
 
-```{r}
+```{r, eval=FALSE}
 # Define the "Best Model" Configuration
 runs_grid <- list(
   # --- 1. ARCHITECTURE ---
@@ -1471,7 +1481,7 @@ To transform the model from a passive classifier into an Early Warning System, w
 
 First, we generate the raw "soft" probabilities from the saved model. We isolate the probabilities for Class 3 (Index 4 in the prediction matrix) to perform the tuning.
 
-```{r}
+```{r, eval=FALSE}
 # Load the trained AdamW model
 model <- load_model("pre-threshold_adamw_best.keras")
 
@@ -1499,7 +1509,7 @@ true_labels_class_3 <- y_val[, 4]
 
 We sweep through potential thresholds to calculate the F1-Score for Class 3 at every point.
 
-```{r}
+```{r, eval=FALSE}
 # Tuning Loop for Risk Class (Index 4 / Class 3)
 # We use the variables you just created: scores_class_3 & true_labels_class_3
 
@@ -1534,7 +1544,7 @@ cat("Max F1 Score:     ", round(best_f1, 4), "\n")
 
 The optimization curve below illustrates the trade-off. While the default boundary (0.5) is standard, the specific risk characteristics of this dataset peak at 0.35.
 
-```{r}
+```{r, eval=FALSE}
 # Plot the F1 Curve for Class 3
 plot(thresholds, f1_scores, type = "l", lwd = 2, col = "darkred",
      main = "Risk Detection Optimization: Class 3 (Status '1')",
@@ -1553,9 +1563,11 @@ text(0.35, 0.5622, "Max F1: 0.562", pos = 4, col = "red")
 
 ```
 
+![](images/clipboard-3466959939.png)
+
 We now apply the 0.35 Risk Override to the validation set. If the model assigns a probability greater than 35% to Class 3, we force that prediction, prioritizing risk detection over the majority class signal.
 
-```{r}
+```{r, eval=FALSE}
 # 1. Start with Standard Predictions (Argmax)
 # This mimics the "default" behavior
 final_preds <- apply(probs, 1, which.max) - 1
@@ -1581,6 +1593,8 @@ print(cm_risk_tuned$byClass["Class: 3", c("Sensitivity", "Precision", "F1")])
 print(cm_risk_tuned$table)
 ```
 
+![](images/clipboard-2889827980.png)
+
 **Impact Analysis**
 
 The tuned model demonstrates a definitive improvement in detecting at-risk customers:
@@ -1603,7 +1617,7 @@ The tuned model demonstrates a definitive improvement in detecting at-risk custo
 
     -   Business Justification: In credit risk, a "False Alarm" (checking on a good customer) is significantly less costly than a "False Negative" (missing a default). This trade-off is strategic and intentional.
 
-```{r}
+```{r, eval=FALSE}
 # Save the trained engine to disk
 save_model(model, "risk_tuned_adamw.keras")
 message("Model saved successfully. Deployment requires Threshold=0.35 for Class 3.")
@@ -1611,7 +1625,7 @@ message("Model saved successfully. Deployment requires Threshold=0.35 for Class 
 
 ### 4.4.2. SGD with Momentum
 
-```{r}
+```{r, eval=FALSE}
 # Define the Search Grid
 runs_grid <- list(
   # --- 1. ARCHITECTURE ---
@@ -1673,7 +1687,7 @@ Mathematically and intuitively, this acts like a ball rolling down a hill. As it
 all_results <- ls_runs(runs_dir = "tuning_sgdmomentum_v2")
 
 # View them in the RStudio data viewer (Sortable table)
-View(all_results)
+#View(all_results)
 
 # 3. Print just the top 5 models sorted by Validation Accuracy
 top_models <- all_results %>%
@@ -1703,7 +1717,7 @@ Momentum 0.9: The high momentum coefficient complements the low learning rate. I
 
 #### Regularization tuning
 
-```{r}
+```{r, eval=FALSE}
 # Define the Search Grid
 runs_grid <- list(
   # --- 1. ARCHITECTURE ---
@@ -1751,7 +1765,7 @@ toc()
 all_results <- ls_runs(runs_dir = "tuning_sgdmomentum_v3")
 
 # View them in the RStudio data viewer (Sortable table)
-View(all_results)
+#View(all_results)
 
 # 3. Print just the top 5 models sorted by Validation Accuracy
 top_models <- all_results %>%
@@ -1789,8 +1803,8 @@ The grid search revealed that for the SGD Momentum optimizer on this specific da
 
 First we retrain the winning model architecture for SGD with momentum.
 
-```{r}
-# Load the trained AdamW model
+```{r, eval=FALSE}
+# Load the trained sgd model
 model <- load_model("pre-threshold_sgdmomentum_best.keras")
 
 # --- 2. Data Preparation (Sanity Check) ---
@@ -1846,7 +1860,7 @@ cat("Optimal Threshold:", best_threshold, "\n")
 cat("Max F1 Score:     ", round(best_f1, 4), "\n")
 ```
 
-```{r}
+```{r, eval=FALSE}
 # Plot the F1 Curve for Class 3
 plot(thresholds, f1_scores, type = "l", lwd = 2, col = "darkred",
      main = "Risk Detection Optimization: Class 3 (Status '1')",
@@ -1864,13 +1878,15 @@ legend("topright", legend = c("F1 Score", "Default (0.5)", "Optimized (0.35)"),
 text(0.35, 0.5622, "Max F1: 0.562", pos = 4, col = "red")
 ```
 
+![](images/clipboard-2569926904.png)
+
 The plot demonstrates that the model's performance for the risk class peaks at a lower threshold than the standard.
 
 -   The Optimized Threshold (red dashed line) is at 0.35, achieving a Max F1 Score of 0.562.
 
 -   The Default Threshold (gray dashed line) is at 0.5, where the curve is notably lower.
 
-```{r}
+```{r, eval=FALSE}
 # 1. Start with Standard Predictions (Argmax)
 # This mimics the "default" behavior
 final_preds <- apply(probs, 1, which.max) - 1
@@ -1896,6 +1912,8 @@ print(cm_risk_tuned$byClass["Class: 3", c("Sensitivity", "Precision", "F1")])
 print(cm_risk_tuned$table)
 ```
 
+![](images/clipboard-2511864051.png)
+
 **Impact Analysis** By shifting the decision threshold from the standard 0.50 to the optimized 0.39, the model's behavior changed from a conservative classifier to a proactive risk detection engine. The quantitative impact is detailed below:
 
 Significant Gain in Risk Capture (Sensitivity)
@@ -1920,23 +1938,23 @@ Strategic Trade-off (The Cost of Business)
 
 The final SGD Momentum model, enhanced with a 0.39 decision threshold, delivers a Class 3 Recall of nearly 60% while maintaining a high overall accuracy. This configuration maximizes the business value of the predictive engine, prioritizing asset protection over passive accuracy.
 
-```{r}
+```{r, eval=FALSE}
 # Save the trained engine to disk
 save_model(model, "risk_tuned_sgd_momentum.keras")
 message("Model saved successfully. Deployment requires Threshold=0.39 for Class 3.")
 ```
 
-# 5. Model stability and comparison
+## 4.5. Model stability and comparison
 
 Having identified two candidate "Champion" configurations—one utilizing AdamW (optimized for delayed generalization) and one utilizing SGD with Momentum (optimized for steady convergence)—we now proceed to the final evaluation phase. This chapter details the rigorous testing methodology used to assess the stability of these architectures and selects the final deployment model based on strictly unseen data.
 
-## 5.1. Stability Testing: Post-Hoc K-Fold Cross-Validation
+### 4.5.1. Stability Testing: Post-Hoc K-Fold Cross-Validation
 
 Standard machine learning methodology typically employs K-Fold Cross-Validation during the hyperparameter tuning phase. However, due to the substantial computational cost of our extensive grid searches (5000 epochs per run), our initial optimization was conducted using a fixed validation split. While efficient, this approach carries a risk: the selected hyperparameters could potentially be biased toward the specific quirks of that validation subset.
 
 To validate the robustness of our findings, we conduct a 5-Fold Cross-Validation on the two finalized architectures. - We do not use this step to re-tune hyperparameters. Instead, our objective is to measure Model Stability. By training each architecture five separate times on different data splits, we calculate the standard deviation of the Validation Accuracy and Loss. - A low standard deviation confirms that the model's performance is intrinsic to the architecture and not a result of a "lucky" data split. This ensures the chosen model is reliable enough for production deployment.
 
-```{r model_comparison, echo=FALSE, warning=FALSE}
+```{r, eval=FALSE}
 # Define the "Grid" - In this case, we are just comparing two specific configurations
 comparison_grid <- list(
   model_type = c("ADAMW", "SGD") 
@@ -1965,7 +1983,7 @@ The summary of performance metrics across all 5 folds for both candidate archite
 
 The primary objective of this experiment was to verify model stability. The results confirm that both architectures are highly stable. The standard deviation for accuracy across five distinct data splits was negligible for both models (±0.003 for AdamW and ±0.002 for SGD). This indicates that neither model is relying on "lucky" data splits; their performance is intrinsic to their architecture and hyperparameters.
 
-**Performance Comparison**
+### **4.5.2. Performance Comparison**
 
 While both models are stable, they are not equal in performance. The SGD Momentum architecture demonstrated superior convergence and generalization capabilities:
 
@@ -1977,7 +1995,7 @@ The decisive factor for this business case is the detection of high-risk custome
 
 The Champion Model Based on the evidence that it offers superior overall accuracy, lower loss, and, most importantly, a 7.7% absolute improvement in risk detection, the SGD Momentum architecture is selected as the final Champion Model. It offers the best trade-off between stability, reliability, and the strategic goal of asset protection.
 
-## 5.2. Generalization on the Test Set
+# 6. Generalization on the Test Set
 
 The ultimate measure of a predictive model is its performance on data it has never encountered. Throughout the entire project, a dedicated 15% Test Set was locked away and strictly excluded from all training, validation, and threshold tuning processes.
 
@@ -1987,15 +2005,218 @@ To select the final winner, we execute the following protocol:
 
 -   The normalization scaler is re-fitted on this full training set to ensure the best possible feature distribution.
 
-```{r}
+-   Learning Rate Decay: We re-train the model using a Learning Rate Decay schedule. We begin with the optimal learning rate found during tuning and gradually reduce it as training progresses.
+
+By combining the datasets and introducing learning rate decay, we aim to achieve the following:
+
+-   Refined Convergence: As the model approaches the optimal solution, a high learning rate can cause it to oscillate around the minimum loss. Decaying the rate acts like "annealing," allowing the model to take smaller, more precise steps and settle into a deeper, more stable minimum.
+
+-   Reduced Variance: Merging the validation set increases the training data volume. More data generally reduces model variance, allowing the network to learn more subtle patterns that might have been statistically insignificant in the smaller set.
+
+-   The "Best Case" Scenario: We expect this final model to demonstrate superior generalization. While the validation score might have plateaued previously, the combination of richer data and finer weight adjustments should yield a slight but critical improvement in performance metrics on the final Test Set.
+
+```{r, eval=FALSE}
+# Set the directory where you want this run to be saved
+options(tfruns.runs_dir = "champion_model")
+
 tic()
-tuning_run("Assignment_2_champion_model.r", 
-           runs_dir = "champion_model", 
-           flags = comparison_grid, 
-           sample = 1.0, 
-           echo = FALSE)
+training_run("Assignment_2_champion_model.r", echo = TRUE)
 toc()
 beep(sound = 2)
 ```
 
-# 
+## 6.1. Champion model Analysis
+
+```{r}
+# Define the path
+model_path <- "champion_model/2025-12-29T07-35-00Z/final_sgd_champion_model.keras"
+
+# Load the model using the native R keras function
+final_model <- load_model(model_path)
+
+# Display the model architecture and parameter count
+summary(final_model)
+```
+
+The summary reveals a compact, fully connected (feed-forward) neural network designed for efficiency. It follows a modern "Dense → Batch Normalization → Activation" pattern, which stabilizes the learning process and allows for higher learning rates.
+
+**Input Specifications (Deduced)**
+
+Implied Input Features: Based on the first layer's parameter count (6,400 params / 128 neurons = 50 weights per neuron), this model expects an input vector of 50 features.
+
+Note: Bias is switched off due to batch normalization.
+
+**The "Feature Extractor" (Hidden Layers)**
+
+The model processes data through two main blocks, progressively compressing the information:
+
+-   Block 1 (Expansion): A wide layer of 128 neurons. This expands the feature space to capture complex, non-linear interactions between your inputs.
+
+-   Batch Normalization is applied immediately to normalize layer outputs, reducing covariate shift.
+
+-   Block 2 (Compression): A bottleneck layer of 64 neurons. This forces the model to distill the learned patterns into more robust, essential representations.
+
+**The "Classification Head" (Output)**
+
+-   Output Layer: dense_2 (Dense) with 8 units.
+
+Implication: This indicates a Multi-Class Classification problem where the model is predicting probabilities for 8 distinct classes. (If this were binary classification, we would typically see 1 unit; if this were regression, 1 unit).
+
+**Parameter Efficiency**
+
+-   Total Params: \~31k.
+
+-   Trainable Params: \~15.5k. This is a lightweight model. It is unlikely to memorize massive datasets (low risk of gross overfitting), relying instead on strong generalization.
+
+-   Optimizer Params: The presence of \~15.5k "Optimizer params" confirms the model was saved after training (containing the SGD momentum state variables).
+
+## 6.2. Training champion model
+
+```{r}
+#view_run("DS-Project_Part2_Scripts/champion_model/2025-12-29T07-35-00Z")
+```
+
+The training of the "Champion" model (2025-12-29T07-35-00Z) demonstrates a highly stable and well-converged optimization process. The history plots confirm that the architecture (Dense-128 → Dense-64) combined with the SGD optimizer and learning rate schedule effectively minimized loss while preventing significant overfitting.
+
+**Key Performance Indicators**
+
+-   Training Accuracy: 87.84%
+
+-   Validation Accuracy: 84.05%
+
+-   Generalization Gap: \~3.8%. This narrow gap indicates robust learning. The model has generalized well rather than memorizing the training data, validating the effectiveness of the L2 regularization and Batch Normalization.
+
+**Training Dynamics (Visual Analysis)**
+
+![](images/clipboard-2068737832.png)
+
+-   Rapid Convergence (Epochs 0–500): The model learned the primary patterns quickly. Both training and validation accuracy rose steeply, and the loss curve shows a distinct "elbow," indicating the optimizer successfully located the gradient descent path.
+
+-   Stabilization (Epochs 500–1750): Performance stabilized with the validation loss flattening around 0.51. The divergence between training loss (blue) and validation loss (green) remained constant and controlled, proving that the model did not suffer from "runaway" overfitting despite the extended training time.
+
+-   Learning Rate Decay (Epoch \~1750): The bottom chart clearly shows the Learning Rate Decay triggering at approximately epoch 1750.
+
+-   Effect: The learning rate dropped (likely by a factor of 10), acting as an "annealing" phase. This allowed the model to take smaller steps and settle deeper into the local minimum, squeezing out the final fraction of performance stability.
+
+**Conclusion**
+
+The final validation accuracy of 84.05% represents a strong result. The flat validation loss curve confirms that training was stopped at the optimal point, further training would likely have yielded diminishing returns or increased overfitting. The model is now ready for the final Test Set evaluation.
+
+## 6.3. Final Test Set Evaluation
+
+The champion model (SGD-optimized Neural Network) was subjected to a final, rigorous evaluation on the 15% Hold-out Test Set. These samples were strictly excluded from all prior training and tuning phases to serve as an unbiased "final exam."
+
+**Performance Overview**
+
+-   Test Accuracy: 84.76%
+    -   The model correctly classified approximately 85 out of every 100 customer records in the unseen dataset.
+-   Test Loss: 0.4996
+    -   A loss below 0.50 on a multi-class problem indicates strong probabilistic confidence in the correct predictions.
+
+```{r, eval=FALSE}
+model_path <- "champion_model/2025-12-29T07-35-00Z/final_sgd_champion_model.keras"
+final_model <- load_model(model_path)
+
+# --- 1. Evaluate Global Metrics ---
+cat("Evaluating on Test Set (15% Hold-out)...\n")
+# Note: 'results' is a named list of metrics
+results <- final_model %>% evaluate(x_test, y_test, verbose = 0)
+
+# --- 2. Print Scores (Fixed Variable Name and Extraction) ---
+cat(sprintf("\n=== FINAL TEST RESULTS ===\n"))
+# Use double brackets [[ ]] or $ to get the actual number
+cat(sprintf("Test Loss:     %.4f\n", results[["loss"]]))
+cat(sprintf("Test Accuracy: %.2f%%\n", results[["accuracy"]] * 100))
+
+# --- 3. Confusion Matrix (Standard Argmax) ---
+pred_probs <- final_model %>% predict(x_test)
+
+# Convert to Class Labels (1-8)
+pred_classes   <- max.col(pred_probs)
+actual_classes <- max.col(y_test)
+
+conf_mat <- confusionMatrix(
+  data = factor(pred_classes, levels = 1:8),
+  reference = factor(actual_classes, levels = 1:8),
+  mode = "everything"
+)
+
+# Display just the table as requested
+print(conf_mat$table)
+```
+
+![](images/clipboard-2000842180.png)
+
+# 7. Business implication: Minority Class Detection & Behavior Prediction
+
+The primary objective of this predictive model is to forecast future customer repayment behavior, specifically isolating customers with high-risk profiles from those with standard repayment patterns. Given that the dataset is heavily skewed toward minor delinquencies (Class 3), the model’s ability to correctly identify the rare "minority classes"—representing severe delinquency (Classes 5 through 8)—is the critical measure of success.
+
+## 7.1. Detection of Minority Classes (Severe Delinquency)
+
+The model demonstrates a "conservative but precise" prediction strategy regarding the minority classes (customers 60+ days overdue).
+
+-   High Precision: When the model classifies a customer into a severe delinquency category (e.g., Class 8: Write-offs), the prediction is highly reliable. The confusion matrix shows almost zero false positives where a "Paid Off" (Class 2) customer was incorrectly flagged as a "Write-off." This indicates that the model has successfully learned the distinct feature signatures of severe defaulters.
+-   Moderate Sensitivity (Recall): The model captures approximately 50% of the true severe delinquency cases. For example, regarding Class 8 (Write-offs), the model correctly identified 23 cases but missed 23 others, classifying them instead as Class 3 (1-29 days overdue). This suggests that while the model rarely makes a "false accusation," it frequently underestimates the severity of risk for actual defaulters, masking them within the majority group.
+
+## 7.2. Distinction of Behavioral Patterns
+
+The model effectively segments customers into two broad behavioral archetypes: "Standard Risk" and "Confirmed High Risk."
+
+-   It excels at identifying the baseline behavior (Class 3: 1-29 days past due), achieving over 90% accuracy in this segment. This could even be enhanced with the 'Threshold Tuning' technique discussed earlier.
+-   However, the behavioral distinction between adjacent categories—specifically differentiating between a customer who is 29 days late versus 30 days late—remains porous. The model tends to gravitate toward the statistical mode (Class 3), treating it as a "catch-all" for uncertain cases.
+
+## 7.3. Limitations
+
+Despite the strong overall accuracy, the evaluation highlights several key limitations that impact the granularity of behavioral forecasting:
+
+-   Class Imbalance Bias: The confusion matrix reveals a structural bias toward the majority class (Class 3). Because Class 3 dominates the training data, the model’s loss function prioritizes optimizing for this group. Consequently, distinct behavioral signals from minority classes (Class 4, 5, 6) are often overwhelmed, causing these customers to be misclassified as "1-29 days past due."
+-   Granularity of Risk Boundaries: The model struggles to define sharp decision boundaries between temporal categories. For instance, the transition from Class 3 (1-29 days) to Class 4 (30-59 days) is often misidentified. This suggests that the input features may lack the temporal resolution required to distinguish a "one-month" delinquency from a "two-month" delinquency effectively. Data cleaning with domain-knowledge as well as feature engineering focusing on temporal dynamics could help alleviate this issue.
+-   Conservative Estimation of "Good" Payers: The model exhibits a pessimistic bias regarding Class 2 (Paid Off). It misclassified a significant number of fully paid-off customers as being slightly overdue (Class 3). While this minimizes financial risk, accurate behavioral profiling requires a better distinction between "flawless" payers and "slightly late" payers to avoid mischaracterizing high-quality customers.
+
+# 8. Reflection and Learnings
+
+This project served as a rigorous exercise in end-to-end model development. Beyond the technical implementation of code, the process highlighted the critical intersection between domain intuition, strategic resource management, and effective teamwork.
+
+### 8.1. Team Dynamics and "Detective Work" in Preprocessing
+
+A major takeaway was that preprocessing is not merely a technical step of "running code" but a collaborative decision-making process.
+
+-   Challenging Assumptions: The "Working Pensioner" anomaly—where 127 "pensioners" showed valid employment records—was a turning point. Initial standard cleaning missed this, and finding it required one team member to visualize the data while others challenged the "pensioners don't work" assumption. This debate led to the realization that these were mislabeled active workers rather than errors.
+-   Finding Flaws in Thinking: Communication within the team was most valuable when it was critical. We learned that openly discussing "why" we made a specific choice (e.g., "Why drop this outlier?") often revealed flaws in our logic that a single person working in isolation would have missed.
+-   The Limit of External Help: While we reviewed comparable works on Kaggle, they offered limited utility because our dataset was a scrambled variant of the original. We learned we could not simply "copy-paste" logic from other kernels; we had to rely on our own internal analysis and debate to solve the specific quirks of our data.
+
+### 8.2. From Random Exploration to Systematic Grid Search
+
+The workflow evolved significantly from the initial exploratory phase to the final tuning phase.
+
+-   Random Search: Early in the project, we used unstructured random searches to "get a feel" for the hyperparameters. This was effective for rapid hypothesis generation—quickly identifying that the model needed to be "small" (128 units) rather than "deep".
+-   Systematic Grid Search: To definitively select a Champion Model, we transitioned to rigid Grid Searches. We learned that while Random Search is faster, it lacks reproducibility. Systematic search provided the empirical evidence needed to defend our design choices to the group, though it required the discipline to define narrow, realistic ranges to avoid combinatorial explosion.
+
+### 8.3. The Reality of Training: The Pursuit of Grokking and Data Limitations
+
+One of the most challenging aspects of the project was testing the hypothesis of Grokking—the phenomenon where a model appears to learn nothing for thousands of epochs before suddenly generalizing. Driven by the belief that our model needed more time to simplify its internal representation, we invested significant resources into long-duration training.
+
+-   The Cost of "Hopeful" Training: We let models train for 5,000+ epochs, enduring long wait times in the hope of seeing a late-stage jump in validation accuracy. It never happened. Despite the extended compute time, the validation metrics remained stagnant after the initial convergence.
+
+-   The Critical Lesson (Data vs. Model): This failure taught us that patience is not always a virtue in deep learning. We learned that if a model fails to generalize within a reasonable timeframe, simply adding thousands of epochs is rarely the solution. The bottleneck was not the training duration or model capacity, but the data itself. The features likely lacked the necessary signal-to-noise ratio to distinguish the minority classes further, proving that "more training" cannot fix "insufficient signal."
+
+-   Verbose Monitoring (The "Watcher's Dilemma"): These long, futile runs highlighted a trade-off in monitoring strategy:
+
+    -   Verbose = 1: Essential for initial debugging to catch issues like "dying ReLU" early. However, watching a loss curve flatline for hours is psychologically taxing.
+
+    -   Verbose = 0: Necessary for long grid searches to speed up I/O. The downside is the "black box" risk—waiting 10 hours for a run to finish, only to realize a data type error occurred in the first minute.
+
+### 8.4. Pragmatism vs. Information Loss
+
+The team learned to navigate the trade-off between theoretical perfection and practical delivery, a challenge exacerbated by hardware limitations.
+
+-   Resource Bottleneck: As evident in the training logs, the majority of the heavy lifting—training, testing, and documentation—was executed on a single computer. This hardware bottleneck significantly restricted our bandwidth for parallel experimentation, limiting our potential to test a wider variety of methods simultaneously.
+-   The Pragmatic Cut: Ideally, one would perform a Grid Search for every combination of Optimizer and Imbalance Technique. However, due to the single-machine constraint, we made the pragmatic decision to optimize the architecture using only SGD and then apply that fixed architecture to other experiments.
+-   The Consequence: We acknowledge this results in a loss of information—we may have missed a "global optimum." However, this decision was necessary to deliver a finalized, robust model within the project timeline. It highlighted that data science is often the art of making defensible assumptions to reduce a problem's complexity to a solvable scale.
+
+### 8.5. Methodological Integrity: Leakage and Scaling
+
+Beyond model architecture, we learned distinct lessons regarding the technical "hygiene" of the data pipeline.
+
+-   The Sanctity of the Test Set: We recognized the absolute significance of keeping the test set hermetically sealed from the outset. We learned that even minor "peeking" or using the full dataset for global calculations leads to data leakage, rendering final evaluation metrics void.
+-   Implementation of Scaling and Visualization: Learning where and how to implement preprocessing steps was a real learning point. We realized that scaling logic (e.g., MinMax parameters) must be fitted only on the training split before being applied to the test set. Similarly, for visualizations involving the target variable, a strict split had to be made first. Visualizing the target distribution against features using the entire dataset would inadvertently influence our feature engineering decisions based on unseen test data, introducing human bias into the model design.

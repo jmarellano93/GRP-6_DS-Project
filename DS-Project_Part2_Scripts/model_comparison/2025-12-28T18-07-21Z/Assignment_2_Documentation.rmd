@@ -1952,50 +1952,52 @@ toc()
 beep(sound = 2)
 ```
 
-The summary of performance metrics across all 5 folds for both candidate architectures is presented below. The "Stability" is represented by the standard deviation (SD), where a lower value indicates a more consistent model.
-
-|  |  |  |  |
-|------------------|------------------|------------------|------------------|
-| **Metric** | **AdamW (Model A)** | **SGD Momentum (Model B)** | **Difference** |
-| **Avg Validation Accuracy** | 82.39% (±0.3%) | 84.13% (±0.2%) | +1.74% |
-| **Avg Validation Loss** | 0.5646 (±0.003) | 0.5204 (±0.011) | -0.0442 |
-| **Avg Class 3 Risk Recall** | 49.36% | 57.10% | +7.74% |
-
-**Stability Assessment**
-
-The primary objective of this experiment was to verify model stability. The results confirm that both architectures are highly stable. The standard deviation for accuracy across five distinct data splits was negligible for both models (±0.003 for AdamW and ±0.002 for SGD). This indicates that neither model is relying on "lucky" data splits; their performance is intrinsic to their architecture and hyperparameters.
-
-**Performance Comparison**
-
-While both models are stable, they are not equal in performance. The SGD Momentum architecture demonstrated superior convergence and generalization capabilities:
-
--   Lower Loss: The SGD model achieved a lower validation loss (0.520 vs. 0.565), suggesting that the AdamW model settled into a suboptimal local minimum (underfitting) compared to the SGD configuration.
-
--   Higher Accuracy: SGD consistently outperformed AdamW in overall accuracy by nearly 2% across all folds.
-
-The decisive factor for this business case is the detection of high-risk customers (Class 3). After applying the optimized thresholds tuned in the previous phase (0.35 for AdamW, 0.39 for SGD), the performance gap widened further. The SGD model successfully identified 57.1% of at-risk customers on average, whereas the AdamW model only captured 49.4%.
-
-The Champion Model Based on the evidence that it offers superior overall accuracy, lower loss, and, most importantly, a 7.7% absolute improvement in risk detection, the SGD Momentum architecture is selected as the final Champion Model. It offers the best trade-off between stability, reliability, and the strategic goal of asset protection.
-
 ## 5.2. Generalization on the Test Set
 
-The ultimate measure of a predictive model is its performance on data it has never encountered. Throughout the entire project, a dedicated 15% Test Set was locked away and strictly excluded from all training, validation, and threshold tuning processes.
+The ultimate measure of a predictive model is its performance on data it has never encountered. Throughout the entire project (Chapters 2 and 3), a dedicated 15% Test Set was locked away and strictly excluded from all training, validation, and threshold tuning processes.
 
-To select the final winner, we execute the following protocol:
+To select the final winner, we execute the following protocol: - To maximize the learning signal, we merge the previous Training and Validation sets into a single, comprehensive dataset. - The normalization scaler is re-fitted on this full training set to ensure the best possible feature distribution. - Both the AdamW and SGD Momentum models are retrained on the full dataset and then evaluated on the Hold-Out Test Set.
 
--   To maximize the learning signal, we merge the previous Training and Validation sets into a single, comprehensive dataset.
-
--   The normalization scaler is re-fitted on this full training set to ensure the best possible feature distribution.
+This final comparison provides an unbiased estimate of real-world performance. The model that achieves the superior balance of Generalization Accuracy and Risk Detection (Class 3 Recall) on this never-before-seen data will be designated as the final production engine.
 
 ```{r}
-tic()
-tuning_run("Assignment_2_champion_model.r", 
-           runs_dir = "champion_model", 
-           flags = comparison_grid, 
-           sample = 1.0, 
-           echo = FALSE)
-toc()
-beep(sound = 2)
+
 ```
 
-# 
+The entire process is more iterative than this document shows. When finding the best architecture, different grid searches are made with changing hyperparameters and scripts to solve the imbalance. All tests are logged by tfruns and can be checked later.
+
+Note: The tuning-folders have not been updated correctly during testing. Good experiment management would have likely make the understandability of what was changed in what run higher.
+
+```{r}
+# Get all runs
+all_runs <- ls_runs(runs_dir = "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/tuning_architecture_search")
+
+# View top models sorted by Validation Accuracy
+head(ls_runs(order = metric_val_loss, decreasing = FALSE), 10)
+```
+
+## Hyperparameter Tuning and Training Strategy
+
+### Grid Search Implementation
+
+Given the computational cost of training for 5,000 epochs, standard K-Fold Cross-Validation was infeasible. We utilized a rigorous Grid Search on a fixed validation set.
+
+Search Space: Neurons: [64, 128, 256, 512] Dropout: [0.1, 0.2, 0.3, 0.5] Batch Size: [32, 64, 128]
+
+Why specific ranges? We avoided neurons \> 512 as the model size became disproportionate to the dataset size (leading to immediate overfitting). We avoided Batch Sizes \> 128 because smaller batches introduce noise into the gradient estimate, which, paradoxically, acts as a regularizer and helps escape sharp local minima.
+
+### Regularization: Dropout
+
+To further prevent overfitting, we inserted Dropout layers after each hidden layer. Dropout randomly deactivates a percentage of neurons (e.g., 30%) during each training pass.
+
+Justification: This prevents neurons from co-adapting (relying on each other to correct errors). It forces each neuron to learn useful features independently, effectively training an ensemble of exponentially many thinner networks within a single model.
+
+### Manual Learning Rate Scheduling and Grokking
+
+We observed a phenomenon known as Grokking or delayed generalization, where the model's validation accuracy would stagnate for hundreds of epochs before suddenly improving. To exploit this, we abandoned automatic decay (like ReduceLROnPlateau) in favor of a Manual Scheduler.
+
+Strategy: We trained with a relatively high learning rate (0.01) for the first 1,000 epochs to explore the loss landscape broadly.
+
+Refinement: Once the loss stabilized, we manually intervened to drop the learning rate by a factor of 10 (0.001). This allowed the optimizer to settle into the deepest part of the global minimum without overshooting. This manual control gave us the stability required to train for extended durations (5,000 epochs).
+
+# Choosing the best model

@@ -1,0 +1,4 @@
+{
+  "message": "cannot open the connection",
+  "traceback": ["gzfile(file, \"wb\")", "save(x, options, file = output)", "overridePrint(o$x, o$options, o$className, o$nRow, o$nCol)", "print.data.frame(results_log)", "print(results_log)", "eval(ei, envir)", "eval(ei, envir)", "withVisible(eval(ei, envir))", "tuning_run(\"Assignment_2_MLP_modelcomp.r\", runs_dir = \"model_comparison\", \n    flags = comparison_grid, sample = 1, echo = FALSE)"]
+}

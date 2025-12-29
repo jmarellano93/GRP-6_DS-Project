@@ -1,0 +1,314 @@
+---
+title: "Neural_Network"
+output: html_document
+date: "2025-12-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# Set personal working directory
+setwd("~/Documents/Repos/GRP-6_DS-Project")
+renv::activate()
+```
+
+```{r safe-caffeinate, echo=FALSE}
+# SAFE WAKE LOCK
+# 1. -i : Prevents System Sleep (CPU stays on), but allows Screen Sleep.
+# 2. -w : Waits for the current R Process ID (Sys.getpid()).
+# 3. Result: When this R session ends (or crashes), the wake lock dies automatically.
+system(sprintf("caffeinate -i -w %d", Sys.getpid()), wait = FALSE)
+```
+## Type of Network
+The dataset is tabular data with numerical features and a categorical target variable. A feedforward neural network is the most suitable type of network for this classification task.
+
+A convolutional neural network (CNN) is typically used for image data, while a recurrent neural network (RNN) is more suited for sequential data such as time series or text. Since our data does not have spatial or sequential characteristics, a feedforward neural network is the best choice.
+
+```{r libraries}
+library(tfruns)
+library(tictoc)
+library(beepr)
+```
+
+```{r}
+# ==============================================================================
+# RANDOM FOREST BASELINE CHECK
+# Uses the exact same Stratified Split and Preprocessing as the MLP script
+# ==============================================================================
+
+library(caret)
+library(dplyr)
+library(randomForest)
+
+# 1. Load & Prepare Data -------------------------------------------------
+# NOTE: Ensure the path is correct for your local machine
+data <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/Assignment_2_cleaned_v2.csv")
+target_col <- "target_class" 
+
+# Prepare Input Matrix
+x_all <- data %>% select(-all_of(target_col)) %>% as.matrix()
+
+# Prepare Raw Target Vector (Needed for RF and Stratified Splitting)
+y_raw_factor <- as.factor(data[[target_col]])
+
+# 2. Stratified Split Data (Train / Val / Test) --------------------------
+set.seed(42)
+
+# A. Create Test Holdout (15% of Total)
+test_idx <- createDataPartition(y_raw_factor, p = 0.15, list = FALSE)
+
+# x_test_raw <- x_all[test_idx, ] # (Optional: keep if you want to test later)
+# y_test_vec <- y_raw_factor[test_idx]
+
+# Remaining Data (85% of Total)
+x_remain <- x_all[-test_idx, ]
+y_remain_factor <- y_raw_factor[-test_idx]
+
+# B. Create Validation Set (15% of Total => ~17.65% of Remaining)
+val_p <- 0.15 / 0.85 
+val_idx <- createDataPartition(y_remain_factor, p = val_p, list = FALSE)
+
+# Validation Data
+x_val_raw   <- x_remain[val_idx, ]
+y_val_vec   <- y_remain_factor[val_idx] # Target for Validation
+
+# Train Data
+x_train_raw <- x_remain[-val_idx, ]
+y_train_vec <- y_remain_factor[-val_idx] # Target for Training
+
+cat("Data Split Summary (Stratified):\n")
+cat("Train samples: ", nrow(x_train_raw), "\n")
+cat("Val samples:   ", nrow(x_val_raw), "\n")
+
+# 3. Preprocessing (Robust Scaling) --------------------------------------
+# Fit scaler ONLY on Training data, apply to Val
+scaler <- preProcess(x_train_raw, method = c("zv", "center", "scale"))
+
+x_train <- predict(scaler, x_train_raw)
+x_val   <- predict(scaler, x_val_raw)
+
+# 4. Run Random Forest Baseline ------------------------------------------
+cat("\nTraining Random Forest Baseline...\n")
+
+# Train the model
+# ntree=500 is standard; you can increase to 1000 if it runs quickly
+rf_model <- randomForest(x_train, y_train_vec, ntree=500, importance=TRUE)
+
+# 5. Check Results -------------------------------------------------------
+
+# A. OOB (Out of Bag) Error - Internal Validation
+print(rf_model)
+
+# B. Validation Set Performance
+cat("\nEvaluating on Validation Set...\n")
+rf_pred <- predict(rf_model, x_val)
+
+# Generate Confusion Matrix and Statistics
+cm <- confusionMatrix(rf_pred, y_val_vec, mode = "everything")
+print(cm)
+
+# Extract Key Metrics
+accuracy <- cm$overall["Accuracy"]
+macro_f1 <- mean(cm$byClass[, "F1"], na.rm = TRUE)
+bal_acc  <- mean(cm$byClass[, "Balanced Accuracy"], na.rm = TRUE)
+
+cat("\n--- Random Forest Results ---\n")
+cat("Validation Accuracy:      ", round(accuracy, 4), "\n")
+cat("Validation Macro F1:      ", round(macro_f1, 4), "\n")
+cat("Validation Balanced Acc:  ", round(bal_acc, 4), "\n")
+```
+
+
+## Changed metric
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_revised.r")
+beep(sound=5)
+toc()
+```
+
+## Changed metric
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_revised.r")
+beep(sound=5)
+toc()
+```
+
+## Oversample
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_oversample.r")
+beep(sound=5)
+toc()
+```
+
+## SMOTE
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_SMOTE.r")
+beep(sound=5)
+toc()
+```
+
+## Moderate Weight 
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_moderate_weight.r")
+beep(sound=5)
+toc()
+```
+
+## Focal Loss
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_focal_loss.r")
+beep(sound=5)
+toc()
+```
+
+## SMOTE (+ Class weight)
+```{r run the experiment}
+tic()
+training_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_SMOTE_weight.r")
+beep(sound=5)
+toc()
+```
+
+
+
+
+# --- Architecture Search ---
+# Goal: Find the balance between Model Size (Units) and Overfitting (Dropout)
+```{r}
+# Define the Comprehensive Engineering Search Grid
+runs_grid <- list(
+  # --- 1. ARCHITECTURE (The Body) ---
+  # Search Size: Wide (512) vs. Narrow (256)
+  units1 = c(128, 256, 512),
+  
+  # Search Funneling: Tapered (128) vs. Cylindrical (256)
+  units2 = c(64, 128, 256),
+  
+  # Search Depth: 2 Layers (0) vs. 3 Layers (64)
+  units3 = c(0, 64), 
+  
+  # --- 2. OPTIMIZATION (The Engine) ---
+  # Search Learning Speed: Standard (1e-3) vs. Precise (3e-4)
+  learning_rate = c(0.01),
+  
+  # Search Gradient Noise: Noisy (128) vs. Stable (256)
+  # *Added Batch Size here*
+  batch_size = c(64, 128),
+  
+  # --- 3. REGULARIZATION (The Shield) ---
+  # Search Dropout: None (0.0) vs. Standard (0.3)
+  # Note: varying them all together to save time (either all on or all off)
+  # You can separate them if you want 8x more runs.
+  dropout1 = c(0.0),
+  dropout2 = c(0.0),
+  #dropout3 = c(0.0),
+  
+  # Search Weight Decay: Light (1e-2) vs. Heavy (1e-1)
+  # *Added Weight Decay variation here*
+  #weight_decay = c(0.01, 0.1, 0.3, 0.5),
+  momentum = c(0.9, 0.5),
+  # --- CONSTANTS ---
+  # Keep epochs fixed. 100 is enough to judge the architecture.
+  epochs = c(2000)
+)
+```
+
+
+# Execute the Tuning Run
+```{r}
+tic()
+tuning_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_revised.r", 
+           runs_dir = "tuning_architecture_search", 
+           flags = runs_grid, 
+           sample = 1.0, # Run ALL combinations (set to e.g. 0.5 to run random 50%)
+           echo = FALSE)
+
+beep(sound=5)
+toc()
+```
+
+
+# --- View Results ---
+# List top 5 models sorted by Validation Accuracy
+```{r}
+# Retrieve runs, ordered by lowest Validation Loss first
+results <- ls_runs(runs_dir = "tuning_architecture_search", 
+                   order = metric_val_loss, 
+                   decreasing = FALSE) # FALSE because lower loss is better
+
+print(results)
+# Display the winning hyperparameters
+# I added flag_units3 since you are testing depth now as well
+head(results[, c("flag_units1", "flag_units2", "flag_units3",
+                 "metric_val_loss", "metric_val_accuracy")], 24)
+```
+
+
+# Goal: Find the balance between Model Size (Units) and Overfitting (Dropout)
+```{r}
+# Define the Comprehensive Engineering Search Grid
+runs_grid <- list(
+  # --- 1. ARCHITECTURE (The Body) ---
+  # Search Size: Wide (512) vs. Narrow (256)
+  units1 = c(256, 512),
+  
+  # Search Funneling: Tapered (128) vs. Cylindrical (256)
+  units2 = c(256, 512),
+  
+  # Search Depth: 2 Layers (0) vs. 3 Layers (64)
+  #units3 = c(0, 64), 
+  
+  # --- 2. OPTIMIZATION (The Engine) ---
+  # Search Learning Speed: Standard (1e-3) vs. Precise (3e-4)
+  learning_rate = c(0.0005),
+  
+  # Search Gradient Noise: Noisy (128) vs. Stable (256)
+  # *Added Batch Size here*
+  batch_size = c(32, 64),
+  
+  # --- 3. REGULARIZATION (The Shield) ---
+  # Search Dropout: None (0.0) vs. Standard (0.3)
+  # Note: varying them all together to save time (either all on or all off)
+  # You can separate them if you want 8x more runs.
+  dropout1 = c(0.0),
+  dropout2 = c(0.0),
+  #dropout3 = c(0.0),
+  
+  # Search Weight Decay: Light (1e-2) vs. Heavy (1e-1)
+  # *Added Weight Decay variation here*
+  #weight_decay = c(0.01, 0.1, 0.3, 0.5),
+  #momentum = c(0.9, 0.5),
+  # --- CONSTANTS ---
+  # Keep epochs fixed. 100 is enough to judge the architecture.
+  epochs = c(2000)
+)
+```
+
+
+# Execute the Tuning Run
+```{r}
+tic()
+tuning_run("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_Part2_Scripts/Assignment_2_MLP_minmax.r", 
+           runs_dir = "tuning_minmax", 
+           flags = runs_grid, 
+           sample = 1.0, # Run ALL combinations (set to e.g. 0.5 to run random 50%)
+           echo = FALSE)
+
+beep(sound=5)
+toc()
+
+# batch size 32 and lr 0.0001 --> lr is too low, potentially good for a bigger network, depends on starting value of set network
+# batch size 64 and lr 0.0001 --> similar problem, lr is very low and no change in accuracy seen. stopped early
+
+# 512/256, 0.0005, 64 -->  val loss rises at epoch 3500. val accuracy around 0.82
+# 512/512, 0.0005, 64 --> val accuracy keeps rising till around 83% , yet loss rising at epoch 3000'ish
+# 256/512, 0.0005, 32 --> 
+```

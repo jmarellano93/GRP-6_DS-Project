@@ -253,6 +253,8 @@ table(data$term)
 Although the variable term has only two distinct values, it is represented as a numeric feature indicating the loan duration in months. This representation reflects the inherent quantitative nature of the variable, as the difference between a 36-month and a 60-month loan corresponds to a real and meaningful difference in exposure time and repayment horizon. Encoding term numerically preserves both the natural ordering and the magnitude of this difference, rather than merely distinguishing between categories. In addition, treating term as a numeric variable results in a more parsimonious model specification and allows us to avoid unnecessary categorical encoding.
 
 
+Ordinal variables were encoded as ordered factors to preserve their ordinal structure without imposing unjustified metric assumptions. While some factor levels correspond to linear numeric scales, others do not. Therefore, a uniform numeric encoding would introduce inconsistent and potentially misleading distance assumptions. Although this encoding must be reapplied after exporting and reloading the preprocessed CSV file in the training and testing script (we recognized that ordering is not stored in the csv)
+
 ```{r}
 table(data$emp_length)
 ```
@@ -1453,7 +1455,11 @@ contradiction_tot_cur_bal # 0 rows
 
 ```
 
+### Final cleanup
+
 Furthermore there are other columns to drop, which aren't useful for modelling or have too many missing values. Policy code is always 1 and has therefore no value for modelling. We drop revol_util for now, since we should check the recalculation after imputation. If we decide to include it in modelling, we should drop at least one of the two other variables revol_bal or total_rev_hi_lim to avoid multicollinearity. We drop also mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs and pub_rec, since we created categorical variables from them before.
+
+The variable zip_code is removed during preprocessing even though it is provided only in truncated form (e.g., “365xx”). While this representation partially anonymizes the borrower’s location, it still constitutes a high-cardinality geographic identifier that captures localized effects rather than borrower-specific risk characteristics. The ZIP codes in this form offer limited economic interpretability while increasing the model complexity. Excluding this feature improves robustness and reduces the risk.
 
 ```{r}
 cleaned_data <- cleaned_data %>%
@@ -1556,4 +1562,7 @@ write.csv(cleaned_data,
           file = "cleaned_data.csv",
           row.names = FALSE)
 ```
+
+
+
 

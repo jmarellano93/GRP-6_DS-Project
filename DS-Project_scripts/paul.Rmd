@@ -1277,7 +1277,7 @@ Furthermore there are other columns to drop, which aren't useful for modelling o
 
 ```{r}
 cleaned_data <- cleaned_data %>%
-  select(-c(id, member_id, url, desc, zip_code, emp_title, policy_code, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs, mths_since_last_record, pub_rec))
+  select(-c(id, member_id, url, desc, zip_code, emp_title, policy_code, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs, mths_since_last_record, pub_rec, loan_amnt, addr_state))
 ```
 
 We end up with following dataframe for imputation and modeling.
@@ -1510,12 +1510,12 @@ cleaned_data <- cleaned_data %>%
 ```
 ```{r}
 # We'll save it as "cleaned_data.csv" inside the Intermediate directory.
-output_file_path <- "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/cleaned_data.csv"
+#output_file_path <- "/Users/Jujou/Documents/Repos/GRP-6_DS-Project/DS-Project_data/Intermediate/cleaned_data.csv"
 
 # Save the data frame to the specified path
-write.csv(cleaned_data, 
-          file = output_file_path, 
-          row.names = FALSE)
+#write.csv(cleaned_data, 
+#          file = output_file_path, 
+#          row.names = FALSE)
 ```
 
 ### Feature Selection

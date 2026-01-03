@@ -1,0 +1,516 @@
+---
+title: "Assignment 1: LendingClub Training"
+author: "Group 6"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: true
+    number_sections: true
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    df_print: paged
+---
+```{r}
+library(readr)
+library(dplyr)
+```
+
+
+# Task and metric
+The objective of this project is to predict the interest rate (int_rate) assigned to a loan application using borrower and loan characteristics from the provided dataset. Interest rates represent a continuous outcome determined by LendingClub’s internal risk assessment and pricing strategy and therefore constitute a supervised regression problem.
+
+Accurate prediction of interest rates is relevant because it reflects the underlying assessment of borrower credit risk and loan characteristics. From a modeling perspective, this task poses several challenges, including nonlinear relationships between predictors and the target, interactions among credit-related variables, and heterogeneous variance across risk profiles.
+
+Interest rate prediction is approached as a supervised regression task. To ensure a fair and reproducible comparison between different modeling approaches, all models are trained and evaluated using the same data splits and evaluation metrics. Any transformation steps that require learning parameters from the data such as imputation is performed exclusively on the training set to prevent information leakage.
+
+Model performance is evaluated using Root Mean Squared Error (RMSE) as the primary metric and Mean Absolute Error (MAE) as a complementary metric. RMSE penalizes large prediction errors more strongly and is therefore well suited for assessing overall predictive accuracy, while MAE provides an intuitive interpretation of the average absolute deviation between predicted and observed interest rates. These metrics are computed on a validation set and used for model comparison and selection.
+
+# Loading The preprocessed data
+
+```{r}
+data <- read_csv("cleaned_data.csv")
+```
+
+## Order of levels
+
+
+```{r}
+categorical_cols <- names(data)[
+  sapply(data, function(x) is.factor(x) || is.character(x))
+]
+
+categorical_cols
+```
+
+
+```{r}
+num_categories <- sapply(
+  data[categorical_cols],
+  function(x) length(unique(na.omit(x)))
+)
+
+num_categories
+```
+
+### emp_length
+
+```{r}
+# introduce order for emp_length
+data$emp_length <- factor(
+  data$emp_length,
+  levels = c(
+    "< 1 year",
+    "1 year",
+    "2 years",
+    "3 years",
+    "4 years",
+    "5 years",
+    "6 years",
+    "7 years",
+    "8 years",
+    "9 years",
+    "10+ years"
+  ),
+  ordered = TRUE
+)
+```
+
+```{r}
+levels(data$emp_length)
+is.ordered(data$emp_length)
+```
+
+
+
+### verification_status
+
+```{r}
+data$verification_status <- factor(
+  data$verification_status,
+  levels = c(
+    "Not Verified",
+    "Source Verified",
+    "Verified"
+  ),
+  ordered = TRUE
+)
+```
+
+
+```{r}
+levels(data$verification_status)
+is.ordered(data$verification_status)
+```
+
+### home_ownership
+
+```{r}
+data$home_ownership <- factor(
+  data$home_ownership,
+  levels = c("RENT", "MORTGAGE", "OWN"),
+  ordered = TRUE
+)
+```
+
+```{r}
+levels(data$home_ownership)
+is.ordered(data$home_ownership)
+```
+
+
+### delinq_2yrs_cat
+
+```{r}
+data$delinq_2yrs_cat <- factor(
+  data$delinq_2yrs_cat,
+  levels = c("0", "1", "2", "3+"),
+  ordered = TRUE
+)
+```
+
+
+```{r}
+levels(data$delinq_2yrs_cat)
+is.ordered(data$delinq_2yrs_cat)
+```
+
+### delinq_recency
+
+```{r}
+data$delinq_recency <- factor(
+  data$delinq_recency,
+  levels = c(
+    "0",
+    "1-6",
+    "7-12",
+    "13-24",
+    "24+",
+    "none"
+  ),
+  ordered = TRUE
+)
+```
+
+```{r}
+table(data$delinq_recency)
+is.ordered(data$delinq_recency)
+```
+
+### major_derog_recency
+
+```{r}
+data$major_derog_recency <- factor(
+  data$major_derog_recency,
+  levels = c(
+    "0",
+    "1-6",
+    "7-12",
+    "13-24",
+    "25-48",
+    "49-84",
+    "none"
+  ),
+  ordered = TRUE
+)
+```
+
+```{r}
+table(data$major_derog_recency)
+is.ordered(data$major_derog_recency)
+```
+
+
+```{r}
+data_ordered <- data
+```
+
+
+# Imputation of missing values
+```{r}
+missing_summary <- data.frame(
+  column = names(data),
+  missing_count = sapply(data, function(x) sum(is.na(x))),
+  missing_pct = sapply(data, function(x) mean(is.na(x)) * 100)
+) %>%
+  arrange(desc(missing_pct))
+
+knitr::kable(
+  head(missing_summary, 10),
+  digits = 4,
+  caption = "Top 10 features by missing-value percentage and count (after preprocessing)"
+)
+```
+
+
+```{r}
+library(tidymodels)
+library(xgboost)
+
+set.seed(123)
+
+n <- nrow(data_ordered)
+idx_all <- sample.int(n)
+
+n_train <- floor(0.70 * n)
+n_val   <- floor(0.15 * n)
+
+train_idx <- idx_all[1:n_train]
+val_idx   <- idx_all[(n_train + 1):(n_train + n_val)]
+test_idx  <- idx_all[(n_train + n_val + 1):n]
+
+train <- data_ordered[train_idx, ]
+val   <- data_ordered[val_idx, ]
+test  <- data_ordered[test_idx, ]
+
+val_split <- rsample::make_splits(
+  list(analysis = train_idx, assessment = val_idx),
+  data = data_ordered
+)
+
+val_rs <- rsample::manual_rset(
+  splits = list(val_split),
+  ids    = "train_val"
+)
+```
+
+The dataset was split into three mutually exclusive subsets:
+- Training set: used to learn model parameters and preprocessing statistics
+- Validation set: used for model selection and tuning
+- Test set: held out for final, unbiased evaluation
+
+Splitting was performed before any imputation to prevent leakage.
+
+
+
+```{r}
+ggplot(bind_rows(
+  train %>% mutate(split="train"),
+  val   %>% mutate(split="val"),
+  test  %>% mutate(split="test")
+), aes(int_rate, fill=split)) +
+  geom_density(alpha=0.4)
+```
+
+
+```{r}
+# 2) Recipe (ALL preprocessing here; trained on analysis only)
+# ----------------------------
+rec <- recipe(int_rate ~ ., data = train) %>%
+  # --- special handling for major_derog_recency (do this before generic nominal steps) ---
+  step_mutate(
+    major_derog_recency = if_else(
+      is.na(major_derog_recency),
+      "none",
+      as.character(major_derog_recency)
+    )
+  ) %>%
+  step_string2factor(major_derog_recency) %>%   # ensures it's a factor again
+  step_novel(major_derog_recency) %>%
+  step_unknown(major_derog_recency, new_level = "Unknown") %>%
+
+  # --- emp_length: explicit Missing level ---
+  step_unknown(emp_length, new_level = "Missing") %>%
+
+  # --- generic protection for *other* categoricals ---
+  step_novel(all_nominal_predictors(), -major_derog_recency) %>%
+  step_unknown(all_nominal_predictors(), -major_derog_recency, new_level = "Unknown") %>%
+
+  # --- numeric imputation learned on analysis only ---
+  step_impute_median(all_numeric_predictors()) %>%
+
+  # --- encoding ---
+  step_integer(all_ordered_predictors(), zero_based = FALSE) %>%
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) %>%
+  step_zv(all_predictors())
+```
+
+## Linear Regression
+
+
+
+
+
+## Random Forest
+
+We include a random forest regressor as a benchmark model because it is well suited for structured, tabular data with potentially complex nonlinear relationships and interaction effects, which are expected in credit risk–related features. Interest rates are not determined by a single variable but emerge from interactions among borrower characteristics, credit history indicators, and loan attributes. Random forests can naturally capture such interactions without requiring explicit feature engineering.
+
+In contrast to linear regression, random forests do not rely on linearity assumptions and are robust to outliers and heterogeneous variance across observations. At the same time, compared to more advanced boosting methods, random forests provide a strong and stable nonlinear baseline with relatively few tuning requirements and reduced risk of overfitting due to their ensemble averaging mechanism.
+
+Including a random forest model therefore allows us to assess whether modeling nonlinearities and interactions shows a meaningful performance gain over linear models and serves as an important intermediate benchmark when evaluating the added value of more complex models such as XGBoost.
+
+```{r}
+library(ranger)
+
+rf_spec <- rand_forest(
+  trees = 500,
+  mtry  = tune(),
+  min_n = tune()
+) %>%
+  set_engine("ranger", importance = "permutation") %>%
+  set_mode("regression")
+
+rf_wf <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(rf_spec)
+
+set.seed(123)
+rf_grid <- grid_regular(
+  mtry(range = c(5, 60)),
+  min_n(range = c(2, 30)),
+  levels = 5
+)
+
+rf_tuned <- tune_grid(
+  rf_wf,
+  resamples = val_rs,
+  grid      = rf_grid,
+  metrics   = metrics,
+  control   = control_grid(save_pred = TRUE)
+)
+
+rf_best <- select_best(rf_tuned, metric = "rmse")
+rf_best
+
+```
+
+
+```{r}
+rf_final_wf <- finalize_workflow(rf_wf, rf_best)
+
+rf_final_fit <- fit(rf_final_wf, data = bind_rows(train, val))
+
+rf_test_preds <- predict(rf_final_fit, new_data = test) %>%
+  bind_cols(test %>% select(int_rate))
+
+metrics(rf_test_preds, truth = int_rate, estimate = .pred)
+
+```
+
+
+```{r}
+rf_fit_obj <- extract_fit_parsnip(rf_final_fit)$fit
+head(sort(rf_fit_obj$variable.importance, decreasing = TRUE), 15)
+
+```
+
+
+
+## XGBOOST
+
+
+```{r}
+# 3) Model + workflow
+# ----------------------------
+xgb_spec <- boost_tree(
+  trees          = tune(),
+  tree_depth     = tune(),
+  learn_rate     = tune(),
+  loss_reduction = tune(),
+  sample_size    = tune(),
+  mtry           = tune(),
+  min_n          = tune()
+) %>%
+  set_engine(
+    "xgboost",
+    tree_method = "hist",
+    device      = "cpu",
+    verbosity   = 2     # 0=silent, 1=warning, 2=info
+  ) %>%
+  set_mode("regression")
+
+wf <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(xgb_spec)
+
+```
+
+
+```{r}
+# 4) Tuning
+# ----------------------------
+grid <- grid_latin_hypercube(
+  trees(range = c(300, 1500)),
+  tree_depth(range = c(2, 10)),
+  learn_rate(range = c(log10(0.01), log10(0.3))),
+  loss_reduction(),
+  sample_size = sample_prop(),
+  mtry(range = c(10, 80)),
+  min_n(range = c(2, 30)),
+  size = 10
+)
+
+metrics <- metric_set(rmse, mae, rsq)
+
+set.seed(123)
+tuned <- tune_grid(
+  wf,
+  resamples = val_rs,
+  grid      = grid,
+  metrics   = metrics,
+  control   = control_grid(save_pred = TRUE, verbose = TRUE)
+)
+
+best <- select_best(tuned, metric = "rmse")
+final_wf <- finalize_workflow(wf, best)
+
+best
+```
+
+```{r}
+final_wf <- finalize_workflow(wf, best)
+train_val <- dplyr::bind_rows(train, val)
+
+final_fit <- fit(final_wf, data = train_val)
+```
+
+```{r}
+train_preds <- predict(final_fit, train) %>%
+  bind_cols(train %>% select(int_rate))
+
+metrics(train_preds, truth = int_rate, estimate = .pred)
+```
+
+```{r}
+val_preds <- predict(final_fit, val) %>%
+  bind_cols(val %>% select(int_rate))
+
+metrics(val_preds, truth = int_rate, estimate = .pred)
+```
+
+
+```{r}
+test_preds <- predict(final_fit, new_data = test) %>%
+  dplyr::bind_cols(test %>% dplyr::select(int_rate))
+
+metrics(test_preds, truth = int_rate, estimate = .pred)
+```
+
+```{r}
+nrow(test_preds)
+summary(test_preds$.pred)
+summary(test_preds$int_rate)
+```
+
+```{r}
+library(tidymodels)
+library(xgboost)
+
+# recipe: rec (wie bei Ihnen)
+rec_prep <- prep(rec, training = train, retain = TRUE)
+
+train_b <- bake(rec_prep, new_data = train)
+val_b   <- bake(rec_prep, new_data = val)
+test_b  <- bake(rec_prep, new_data = test)
+
+# X / y trennen
+y_train <- train_b$int_rate
+y_val   <- val_b$int_rate
+y_test  <- test_b$int_rate
+
+x_train <- train_b %>% select(-int_rate)
+x_val   <- val_b %>% select(-int_rate)
+x_test  <- test_b %>% select(-int_rate)
+```
+
+
+```{r}
+p <- ncol(x_train)
+colsample_bynode <- min(1, 22 / p)
+colsample_bynode
+```
+```{r}
+dtrain <- xgb.DMatrix(data = as.matrix(x_train), label = y_train)
+dval   <- xgb.DMatrix(data = as.matrix(x_val),   label = y_val)
+
+params <- list(
+  booster          = "gbtree",
+  objective        = "reg:squarederror",
+  eval_metric      = c("rmse", "mse"),
+
+  # Ihre Parameter:
+  max_depth        = 8,                 # tree_depth
+  eta              = 0.03,        # learn_rate    # loss_reduction
+  subsample        = 0.32,         # sample_size
+  colsample_bynode = colsample_bynode,  # mtry (als Anteil)
+  min_child_weight = 7,                 # min_n (Mapping in tidymodels/xgb)
+  
+  tree_method      = "hist"
+  # device = "cuda"  # optional, siehe Hinweis unten
+)
+
+watchlist <- list(train = dtrain, val = dval)
+
+set.seed(123)
+fit_xgb <- xgb.train(
+  params  = params,
+  data    = dtrain,
+  nrounds = 500,         # trees
+  watchlist = watchlist,
+  verbose = 2
+)
+```
+
+starts to overfit after 500

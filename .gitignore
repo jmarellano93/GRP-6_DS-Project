@@ -13,5 +13,7 @@ Full_dataset/
 # IDE/editor
 .vscode/
 *.swp
-.RDataTmp
-.RDataTmp1
+#.RDataTmp
+#.RDataTmp1
+*.RDataTmp2
+*.csv

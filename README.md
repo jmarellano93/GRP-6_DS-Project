@@ -48,15 +48,7 @@ ASSIGNMENT 2: PROJECT OVERVIEW
 ------------------------------------------------------------------------------
 IMPORTANT NOTES
 ------------------------------------------------------------------------------
-
-SEED 42
-Please note that Seed 42 has been used throughout this entire project. 
-While Seed 1 was requested in the assignment description, this discrepancy 
-was identified too late in the development cycle. Re-training all models 
-would have incurred prohibitive computational costs. Besides, 42 is the 
-answer to everything.
-
-VERSION CONTROL
+General: VERSION CONTROL
 Due to the iterative nature of this project, we utilized Git version control 
 rather than saving every intermediate script (e.g., initial EDA, discarded 
 architectures) as separate files in the final folder. Previous iterations 
@@ -64,3 +56,18 @@ and experimental scripts can be retrieved via the commit history.
 
 GITHUB REPOSITORY
 https://github.com/jmarellano93/GRP-6_DS-Project
+
+Assignment 1:
+SEED 123
+Please note that Seed 42 has been used throughout this entire project. 
+While Seed 1 was requested in the assignment description, this discrepancy 
+was identified too late in the development cycle. Re-training all models and 
+output interpretations would have incurred prohibitive computational costs.
+
+Assignment 2:
+SEED 42
+Please note that Seed 42 has been used throughout this entire project. 
+While Seed 1 was requested in the assignment description, this discrepancy 
+was identified too late in the development cycle. Re-training all models 
+would have incurred prohibitive computational costs. Besides, 42 is the 
+answer to everything.

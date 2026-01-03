@@ -17,7 +17,7 @@ library(readr)
 # ==============================================================================
 
 # Load the raw dataset
-original <- read.csv("LCdata.csv", 
+original <- read.csv("/Users/Jujou/Documents/Repos/GRP-6_DS-Project/Assignment_1/LCdata.csv", 
                      row.names = NULL, 
                      sep = ";",
                      header = TRUE)
@@ -491,12 +491,9 @@ print(dim(cleaned_data))
 # ==============================================================================
 
 # Save intermediate csv
-write.csv(cleaned_data,
-          file = "cleaned_data_test.csv",
-          row.names = FALSE)
-
-# Reload csv (Simulating fresh environment start)
-data <- read_csv("cleaned_data.csv")
+#write.csv(cleaned_data,
+#          file = "cleaned_data_test.csv",
+#          row.names = FALSE)
 
 # ==============================================================================
 # SECTION 10: RE-ESTABLISH FACTOR LEVELS (POST-RELOAD)

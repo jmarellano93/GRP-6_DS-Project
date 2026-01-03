@@ -1,0 +1,197 @@
+---
+title: "NLP"
+output: html_document
+date: "2025-11-21"
+---
+# You may need to install these first: install.packages(c("tidyverse", "tidytext", "stringr", "dplyr"))
+```{r}
+library(tidyverse)
+library(tidytext)  # Core package for working with text data in a tidy format
+library(stringr)   # For string manipulation
+```
+
+
+Load data
+```{r}
+original <- read.csv("~/Documents/Repos/GRP-6_DS-Project/DS-Project_data/LCdata.csv", 
+                 row.names = NULL, 
+                 sep = ";",
+                 header = TRUE)
+
+# Predefined columns to drop
+columns_to_drop <- c("collection_recovery_fee",
+                     "installment",
+                     "funded_amnt",
+                     "funded_amnt_inv",
+                     "issue_d",
+                     "last_pymnt_amnt",
+                     "last_pymnt_d",
+                     "loan_status",
+                     "next_pymnt_d",
+                     "out_prncp",
+                     "out_prncp_inv",
+                     "pymnt_plan",
+                     "recoveries",
+                     "total_pymnt",
+                     "total_pymnt_inv",
+                     "total_rec_int",
+                     "total_rec_late_fee",
+                     "total_rec_prncp")
+original_drop <- original[, -match(columns_to_drop,  names(original))]
+
+# Dtype dictionary
+dtype_dict <- list(
+  acc_now_delinq = "integer",
+  addr_state = "factor",
+  all_util = "numeric",
+  annual_inc = "numeric",
+  annual_inc_joint = "numeric",
+  application_type = "factor",
+  collections_12_mths_ex_med = "integer",
+  delinq_2yrs = "integer",
+  desc = "factor",
+  dti = "numeric",
+  dti_joint = "numeric",
+  earliest_cr_line = "date",
+  emp_length = "factor",
+  emp_title = "factor",
+  home_ownership = "factor",
+  id = "integer",
+  il_util = "numeric",
+  initial_list_status = "factor",
+  inq_fi = "integer",
+  inq_last_12m = "integer",
+  inq_last_6mths = "integer",
+  int_rate = "numeric",
+  last_credit_pull_d = "date",
+  loan_amnt = "integer",
+  max_bal_bc = "numeric",
+  member_id = "integer",
+  mths_since_last_delinq = "integer",
+  mths_since_last_major_derog = "integer",
+  mths_since_last_record = "integer",
+  mths_since_rcnt_il = "integer",
+  open_acc = "integer",
+  open_acc_6m = "integer",
+  open_il_12m = "integer",
+  open_il_24m = "integer",
+  open_il_6m = "integer",
+  open_rv_12m = "integer",
+  open_rv_24m = "integer",
+  policy_code = "factor",
+  pub_rec = "integer",
+  purpose = "factor",
+  revol_bal = "integer",
+  revol_util = "numeric",
+  term = "factor",
+  title = "factor",
+  tot_coll_amt = "numeric",
+  tot_cur_bal = "numeric",
+  total_acc = "integer",
+  total_bal_il = "numeric",
+  total_cu_tl = "integer",
+  total_rev_hi_lim = "numeric",
+  url = "factor",
+  zip_code = "factor"
+)
+
+# Cast dtypes according to dictionary
+for(col_name in names(dtype_dict)) {
+  dtype <- dtype_dict[[col_name]]
+  if(dtype == "factor") {
+    original_drop[[col_name]] <- as.factor(original_drop[[col_name]])
+  } else if(dtype == "integer") {
+    original_drop[[col_name]] <- as.integer(original_drop[[col_name]])
+  } else if(dtype == "numeric") {
+    original_drop[[col_name]] <- as.numeric(original_drop[[col_name]])
+  } else if(dtype == "date") {
+    original_drop[[col_name]] <- as.Date(original_drop[[col_name]], format="%b-%Y")
+  }
+}
+
+str(original_drop)
+```
+
+```{r}
+data <- original_drop
+```
+
+
+```{r}
+
+# 2. Text Cleaning and Tokenization
+loan_desc_tokens <- data %>%
+  # Check if 'id' exists. If not, use 'member_id' or generate a row index.
+  # Assuming 'id' is the unique identifier for each loan row
+  select(id, desc) %>%
+  
+  # Filter out rows where desc is NA or empty
+  filter(!is.na(desc) & str_trim(desc) != "") %>%
+  
+  # Convert to lowercase and remove punctuation
+  mutate(desc = str_to_lower(desc)) %>%
+  
+  # Tokenize the text: splits the description into individual words
+  unnest_tokens(word, desc) %>%
+  
+  # Remove common stop words
+  anti_join(stop_words, by = "word") %>%
+  
+  # Filter out non-informative tokens
+  filter(!str_detect(word, "^\\d+$")) %>% # Remove numbers
+  filter(str_length(word) > 2) %>% # Remove very short tokens
+  
+  # *** CRITICAL DEBUGGING STEP: Remove any NAs created during tokenization ***
+  # This step ensures the 'id' and 'word' vectors have the same length and no missing values.
+  filter(!is.na(id) & !is.na(word))
+
+
+# 3. Feature Extraction (Calculating TF-IDF)
+
+# --- 3A. Explicitly Calculate Term Frequency (TF) ---
+# We force the counting step manually to prevent the tapply error inside bind_tf_idf.
+loan_desc_word_counts <- loan_desc_tokens %>%
+  count(id, word, sort = TRUE) # This creates the 'n' column required for TF-IDF
+
+# --- 3B. Calculate TF-IDF ---
+loan_desc_tfidf <- loan_desc_word_counts %>%
+  # Now bind_tf_idf uses the pre-calculated 'n' column for the count
+  bind_tf_idf(term = word, document = id, n = n) %>%
+  
+  # Filter out words that appear too rarely (TF-IDF of 0 means the word is too common or too rare)
+  filter(tf_idf > 0)
+
+
+# 4. Feature Selection and Data Preparation (unchanged)
+top_tfidf_features <- loan_desc_tfidf %>%
+  group_by(word) %>%
+  summarise(mean_tfidf = mean(tf_idf)) %>%
+  arrange(desc(mean_tfidf)) %>%
+  head(500) %>%
+  pull(word)
+
+# Create the final document-term matrix (DTM) with the selected features
+nlp_features_df <- loan_desc_tfidf %>%
+  filter(word %in% top_tfidf_features) %>%
+  
+  # Pivot the data wider for the model
+  select(id, word, tf_idf) %>%
+  pivot_wider(
+    names_from = word,
+    values_from = tf_idf,
+    values_fill = 0
+  ) %>%
+  # Rename columns for clarity in the final model (e.g., 'word_divorce')
+  rename_with(~ paste0("nlp_", .x), .cols = -id)
+
+
+# --- 5. Final Output ---
+print("--- NLP Feature Engineering Complete ---")
+print("The data frame 'nlp_features_df' is ready to merge.")
+print(paste("New DataFrame Dimensions:", nrow(nlp_features_df), "rows,", ncol(nlp_features_df), "columns."))
+```
+
+```{r}
+view(loan_desc_tfidf)
+```
+

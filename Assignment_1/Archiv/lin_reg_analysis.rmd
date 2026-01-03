@@ -1,0 +1,240 @@
+---
+title: "Linear_regression"
+author: "Justin Jouwena"
+date: "2025-12-30"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Load data
+```{r}
+# Asume data is loaded as cleaned_data
+```
+
+# Mandatory Visualisation and Data Checks
+Before fitting the model, you must check for linearity and potential issues using the following methods:
+Linearity Check: For 2-dimensional data, use plot(x, y) and check Pearson’s correlation coefficient (cor()). For higher-dimensional data, use a pairwise scatter plot matrix.
+Correlation Matrix: Use the cor() function to calculate the pairwise correlation coefficients between all variables. This helps identify "linearity along the axes".
+Multicollinearity (VIF): To detect hidden collinearity between three or more variables, calculate the Variance Inflation Factor (VIF).
+R Command: vif(lm.fit) using the car library.
+Interpretation: A VIF=1 indicates no collinearity; a VIF>5 or 10 is considered problematic.
+
+
+# Fitting linear model in R
+Once the data is checked, you can fit the multiple linear regression model:
+Fitting Command: lm.fit = lm(target ~ predictor1 + predictor2 + ..., data = cleaned_data).
+Shorthand for all variables: lm.fit = lm(target ~ ., data = cleaned_data).
+Summary: Use summary(lm.fit) to see the coefficients, p-values, R2, and F-statistic.
+
+# Assess model assumptions
+The lecture notes emphasize that OLS always gives a result, but it might be "nonsense" if assumptions are violated. Use plot(lm.fit) in R to generate diagnostic plots:
+Non-linearity: Check the Residual Plot (Residuals vs. Fitted values). It should show no clear pattern; a U-shape suggests non-linearity.
+Heteroscedasticity (Non-constant Variance): Look for a "funnel shape" in the residual plot.
+Outliers: Use a Studentized Residual Plot (using studres() from the MASS library). Points outside the ±3 range are typically outliers.
+High Leverage Points: Use the leverage statistic plot to find points with unusually large X-values that may disproportionately pull the regression line.
+
+# Evaluate results
+Individual Predictors (t-test): Check the p-values for each coefficient. A p-value < 0.05 (or 0.01) indicates the predictor is statistically significant.
+Overall Model Significance (F-test): Always trust the F-statistic's p-value to determine if at least one predictor is related to the response, especially when individual p-values are diluted by correlation.
+Model Fit (R2 and RSE):
+R2: Measures the portion of variability explained by the model (goodness of fit).
+Adjusted R2: Use this for multiple regression because R2 always increases when adding predictors.
+RSE (Residual Standard Error): Measures the average deviation (lack of fit) in the units of the target variable
+```{r}
+cleaned_data <- cleaned_data %>%
+  select(-acc_now_delinq_bin)
+```
+
+
+
+```{r}
+# 1. Set a seed for reproducibility (as suggested by the iterative process)
+set.seed(123)
+
+# 2. Create indices for training (70%)
+train_indices <- sample(1:nrow(cleaned_data), 0.7 * nrow(cleaned_data))
+train_data <- cleaned_data[train_indices, ]
+
+# 3. Create indices for the remaining 30% to split into val/test
+remaining_data <- cleaned_data[-train_indices, ]
+val_indices <- sample(1:nrow(remaining_data), 0.5 * nrow(remaining_data))
+
+val_data <- remaining_data[val_indices, ]
+test_data <- remaining_data[-val_indices, ]
+```
+
+
+We take a random subset of 10'000 rows for the visualisation, to speed up the process. Yet this has the chance that we won't be able to see big outliers. Still, we have the opportunity to see the general distribution of the data.
+```{r}
+# 1. Set seed for reproducibility
+set.seed(123)
+
+# 2. Take a random subset of 10,000 rows for visualization
+viz_subset <- train_data[sample(1:nrow(train_data), 10000), ]
+```
+
+# Introduciton linear model
+To fit a linear model one has to check whether or not the linearity assumptions hold. These are:
+- Linearity along the axes.
+- Additivity of the errors.
+
+Linearity along the axes:
+```{r}
+pairs(viz_subset)
+```
+```{r}
+par(mfrow = c(2, 3)) # Arrange plots in a grid (2 rows, 3 columns)
+for (i in 1:ncol(viz_subset)) {
+  plot(viz_subset[,i], viz_subset$target_var, 
+       xlab = colnames(viz_subset)[i], 
+       ylab = "Target")
+}
+```
+is the result "roughly" linear? meaning:
+Linearity along the axes: As X increases, does Y generally increase or decrease at a constant rate
+No clear curvature: If you see a distinct bend, the linear model is "ineligible" in its current form.
+
+
+We do not see any curvature, yet the plots are messy. therefor linearity among the axes holds roughly.
+
+```{r}
+# 1. Select only numeric columns from your visualization subset
+numeric_viz <- viz_subset[, sapply(viz_subset, is.numeric)]
+
+# 2. Run the correlation matrix on the numeric data
+cor_matrix <- cor(numeric_viz, use = "complete.obs") # 'complete.obs' handles any NAs
+
+# 3. View the correlation matrix
+print(cor_matrix)
+```
+```{r}
+# A quick way to see which variables are "linearly eligible"
+image(cor_matrix, main = "Correlation Heatmap")
+```
+
+1. Correlation and Visual Assessment
+
+Initial exploratory data analysis reveals that the quantitative predictors in this dataset exhibit low Pearson correlation coefficients relative to the target variable. In a high-dimensional context, it is common for individual features to show a weak linear signal (often characterized by a "cloud" of data points in a scatterplot) rather than a distinct, narrow diagonal line.
+
+Furthermore, the pairwise correlation matrix indicates a general absence of significant multicollinearity among the predictors, with the notable exception of redundant features (such as a variable and its direct log-transformation). These redundant features must be addressed to prevent mathematical instability in the model estimates.
+
+2. Defining "Rough Linearity"
+
+In predictive modeling, the assumption of "rough linearity" does not require the data to adhere to a perfect geometric line. Instead, it implies two primary conditions:
+
+Absence of Non-linear Patterns: The relationship between predictors and the target does not exhibit a distinct functional curve (such as a U-shape, S-curve, or parabolic trend).
+
+Constant Rate of Change: For any given predictor, the change in the target variable is assumed to be relatively constant across the range of the input, rather than accelerating or decelerating.
+
+3. Justification for the Linear Regression Approach
+
+Despite the lack of high individual correlation values, a multiple linear regression model remains the most appropriate baseline methodology for this analysis for the following reasons:
+
+Aggregate Predictive Power: While individual predictors may appear weak in isolation, the combination of multiple features can yield a statistically significant model. Linear models are frequently competitive in real-world applications because they aggregate these small signals into a robust prediction.
+
+Diagnostic Necessity: Visual inspection and correlation matrices only assess "linearity along the axes." They cannot account for multidimensional interactions. Fitting a linear model is a necessary step to generate Residual Plots, which serve as the definitive test for model eligibility. If the residuals appear as random noise, the linear assumption is validated.
+
+Interpretability and Inference: A linear approach provides clear coefficients that describe the direction and magnitude of the relationship between each predictor and the target, offering better interpretability than more complex non-linear methods.
+
+4. Conclusion
+
+Given that visual inspections confirmed an absence of curvature, there is no evidence to suggest that the data violates the fundamental assumptions of linearity. The low correlation coefficients suggest a high degree of variance, but they do not render a linear model ineligible. Therefore, the analysis will proceed with a baseline linear fit, followed by rigorous diagnostic checks to confirm that the errors are randomly distributed and that the model's standard errors remain reliable.
+
+# fit model
+```{r}
+lm.fit <- lm(int_rate ~ ., data = viz_subset)
+```
+```{r}
+summary(lm.fit)
+```
+
+
+
+Multicollinearity
+```{r}
+library(car)
+# 3. Calculate VIF
+vif_values <- vif(lm.fit)
+
+# 4. View results
+print(vif_values)
+```
+
+```{r}
+plot(lm.fit)
+```
+
+```{r}
+prepare_linear_model <- function(df, predictor_list, target_var) {
+  # Load necessary libraries
+  library(car)
+  library(MASS)
+  
+  # 1. Create the formula
+  formula_str <- paste(target_var, "~", paste(predictor_list, collapse = " + "))
+  
+  # 2. Initial Correlation Matrix (Numeric columns only for calculation)
+  # Note: cor() requires numeric input, so we subset for the matrix only
+  num_subset <- df[, c(target_var, predictor_list)]
+  num_cols <- sapply(num_subset, is.numeric)
+  print("--- Mandatory Correlation Matrix (Numeric Only) ---")
+  print(round(cor(num_subset[, num_cols], use = "complete.obs"), 2))
+  
+  # 3. Fit the Linear Model
+  fit <- lm(as.formula(formula_str), data = df)
+  
+  # 4. Model Summary (Check R2, Adjusted R2, and F-statistic p-value here)
+  print("--- Model Summary ---")
+  print(summary(fit))
+  
+  # 5. Multicollinearity Check (VIF)
+  # Interpretation: VIF > 5 or 10 indicates problematic collinearity
+  print("--- Variance Inflation Factor (VIF) ---")
+  print(vif(fit))
+  
+  # 6. Outlier Detection: Studentized Residuals
+  # Based on Slide 83: Values > |3| are typically outliers
+  st_res <- studres(fit)
+  outlier_indices <- which(abs(st_res) > 3)
+  print(paste("--- Potential Outliers (Stud. Res. > |3|):", length(outlier_indices), "---"))
+  
+  # 7. Influence Check: Cook's Distance
+  # Measures how much the model changes if an observation is removed
+  cooks_d <- cooks.distance(fit)
+  high_influence_indices <- which(cooks_d > (4 / nrow(df))) # Common threshold 4/n
+  print(paste("--- High Influence Points (Cook's D > 4/n):", length(high_influence_indices), "---"))
+  
+  # 8. Mandatory Diagnostic Plots
+  # 1st plot: Residuals vs Fitted (Linearity check)
+  # 2nd plot: Normal Q-Q (Normality of errors)
+  # 3rd plot: Scale-Location (Heteroscedasticity)
+  # 4th plot: Residuals vs Leverage (Leverage points)
+  par(mfrow = c(2, 2))
+  plot(fit)
+  
+  return(fit)
+}
+```
+```{r}
+my_predictors <- c("term","emp_length","home_ownership","annual_inc","verification_status","purpose","dti","inq_last_6mths", "open_acc" ,"revol_bal","total_acc","tot_cur_bal" ,"total_rev_hi_lim","earliest_cr_line_date","last_credit_pull_d_date","log_loan_amnt","delinq_2yrs_cat","delinq_recency","major_derog_recency")
+final_model <- prepare_linear_model(viz_subset, my_predictors, "int_rate")
+```
+```{r}
+my_predictors <- c("term","home_ownership","annual_inc","verification_status","purpose","dti","inq_last_6mths", "open_acc" ,"revol_bal","total_acc","tot_cur_bal" ,"total_rev_hi_lim","earliest_cr_line_date","last_credit_pull_d_date","log_loan_amnt","delinq_2yrs_cat","delinq_recency","major_derog_recency")
+final_model <- prepare_linear_model(viz_subset, my_predictors, "int_rate")
+```
+```{r}
+my_predictors <- c("term","annual_inc","verification_status","purpose","dti","inq_last_6mths", "open_acc" ,"revol_bal","total_acc","tot_cur_bal" ,"total_rev_hi_lim","earliest_cr_line_date","last_credit_pull_d_date","log_loan_amnt","delinq_2yrs_cat","delinq_recency","major_derog_recency")
+final_model <- prepare_linear_model(viz_subset, my_predictors, "int_rate")
+```
+```{r}
+my_predictors <- c("term","annual_inc","verification_status","dti","inq_last_6mths", "open_acc" ,"revol_bal","total_acc","tot_cur_bal" ,"total_rev_hi_lim","earliest_cr_line_date","last_credit_pull_d_date")
+final_model <- prepare_linear_model(viz_subset, my_predictors, "int_rate")
+```
+
+
+
+

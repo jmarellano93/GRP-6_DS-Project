@@ -1,5 +1,5 @@
 ---
-title: "Assignment 1: LendingClub Data Preprocessing"
+title: "Assignment 1 - Regression"
 author: "Group 6"
 date: "`r format(Sys.Date(), '%Y-%m-%d')`"
 output:
@@ -10,10 +10,9 @@ output:
   html_document:
     toc: true
     toc_depth: 2
-    number_sections: true
+    number_sections: tru
     df_print: paged
 ---
-# Workflow
 
 
 ```{r setup, include=FALSE}
@@ -31,9 +30,10 @@ options(
 )
 ```
 
+# Abstract
 
+This project investigates the prediction of LendingClub interest rates using borrower and loan characteristics, with the goal of comparing models of increasing complexity and assessing their generalization performance. After extensive data preprocessing and exploratory analysis, three modeling approaches were evaluated: linear regression, Random Forest, and XGBoost. The linear model served as a transparent baseline but showed clear limitations due to non-linearity and heteroskedasticity. Tree-based ensemble methods substantially improved predictive accuracy by capturing complex interactions. The XGBoost achieved the strongest overall performance with a MSE of 8.78. Cross-validation and diagnostic analyses revealed stable generalization across data splits but also highlighted systematic underestimation of extreme interest rates, reflecting inherent challenges in modeling rare, high-risk loans. Overall, the results demonstrate that while advanced ensemble methods offer meaningful improvements over linear models, predictive accuracy is fundamentally constrained by data noise and heterogeneity in consumer credit markets.
 
-### write chapter of the workflow and how it differs from best practice
 
 # Data Preprocessing
 
@@ -49,6 +49,7 @@ library(patchwork)
 library(lubridate)
 library(caret)
 library(readr)
+
 ```
 
 The data is loaded into a dataframe and predefined columns are dropped. With a first look at the data using the data dictionary, as well as looking at the first few rows, a dictionary for the data types is created. The data is casted into the correct data types. and a copy of the original dataframe is created for backup.
@@ -158,7 +159,7 @@ str(original_drop)
 data <- original_drop
 ```
 
-A predefined set of variables was excluded at the beginning of the preprocessing pipeline based on the project specification and the provided data dictionary. In addition, url is removed immediately after loading the raw data. Together wit id, and member_id these variables uniquely identify loans or borrowers but do not contain predictive information and are not available or meaningful for new loan applications. The id and member_id are droped later after checking for duplicates. Dropping them at the outset prevents accidental use in downstream preprocessing or modeling steps and ensures that all subsequent transformations operate exclusively on potentially informative features.
+A predefined set of variables was excluded at the beginning of the preprocessing pipeline based on the project specification and the provided data dictionary. In addition, url is removed immediately after loading the raw data. Together wit id, and member_id these variables uniquely identify loans or borrowers but do not contain predictive information and are not available or meaningful for new loan applications. The id and member_id are dropped later after checking for duplicates. Dropping them at the outset prevents accidental use in downstream preprocessing or modeling steps and ensures that all subsequent transformations operate exclusively on potentially informative features.
 
 ## Data Understanding
 
@@ -174,7 +175,7 @@ print(head(data))
 # Get the dimensions of the dataset
 dim(data)
 print(paste("The number of rows is:", nrow(data))) # 798'641
-print(paste("The number of columns is:", ncol(data))) # 53
+print(paste("The number of columns is:", ncol(data))) # 52
 
 # Get the structure of the dataset
 str(data)
@@ -185,9 +186,13 @@ str(data)
 summary(data)
 ```
 
-General observations: - Many numeric columns show very large ranges, some with maximum values far beyond plausible real-world limits. - Several variables contain placeholder values such as 999, 9999, or -1 indicating missing or unknown information. - A number of columns show repeated NA counts, such as NA's: 25 appearing across unrelated features, suggesting systematic missingness. - Some categorical columns include unusual entries like (Other) or long HTML-like strings.
+General observations: 
+- Many numeric columns show very large ranges, some with maximum values far beyond plausible real-world limits. 
+- Several variables contain placeholder values such as 999, 9999, or -1 indicating missing or unknown information. 
+- A number of columns show repeated NA counts, such as NA's: 25 appearing across unrelated features, suggesting systematic missingness. 
+- Some categorical columns include unusual entries like (Other) or long HTML-like strings.
 
-Loan amount variables (loan_amnt, funded_amnt, funded_amnt_inv) show values ranging from \$500 to tens of millions, which is unrealistic for consumer lending and likely erroneous. Such extreme values need investigation and removal. Interest rate values are within expected ranges. Employment fields contain high-cardinality free-text entries and placeholders. Home ownership includes standard entries but also rare placeholders such as ANY or NONE. Annual income includes extreme values exceeding several million dollars, which are likely incorrect and should be capped or treated as NA. Zip codes and state entries contain unusual placeholders such as Other. Debt-to-income ratio includes 999 or 999.99 as clear placeholders and should be converted to NA. Delinquency-related variables contain many missing values and some extreme maximums that may be unrealistic. Revolving utilization contains impossible values greater than 100 percent, indicating data entry errors. Other credit variables show suspiciously high counts or balances that do not fit typical borrower profiles. Common placeholder patterns detected include 999, 999.0, 999.99, 9999, or textual placeholders like Other. These should be replaced with NA during cleaning. Repeated NA counts (e.g., NA's: 25) across certain variables suggest missing information originating from the same borrower rows. These relationships should be examined. Columns containing URLs or HTML-like descriptions contribute no analytical value and should be removed unless needed for text analysis. Issues to fix include extreme outliers, placeholder values requiring conversion to NA, text cleanup for free-text fields, consistent NA handling across affected rows, and parsing of date fields. Irrelevant columns such as url or verbose descriptions can be dropped. After cleaning, a new summary should be generated to confirm improvements.
+Loan amount variables (loan_amnt, funded_amnt, funded_amnt_inv) show values ranging from \$500 to tens of millions, which is unrealistic for consumer lending and likely erroneous. Such extreme values need investigation and removal. Interest rate values are within expected ranges. Employment fields contain high-cardinality free-text entries and placeholders. Home ownership includes standard entries but also rare placeholders such as ANY or NONE. Annual income includes extreme values exceeding several million dollars, which are likely incorrect and should be capped or treated as NA. Zip codes and state entries contain unusual placeholders such as Other. Debt-to-income ratio includes 999 or 999.99 as clear placeholders and should be converted to NA. Delinquency-related variables contain many missing values and some extreme maxima that may be unrealistic. Revolving utilization contains impossible values greater than 100 percent, indicating data entry errors. Other credit variables show suspiciously high counts or balances that do not fit typical borrower profiles. Common placeholder patterns detected include 999, 999.0, 999.99, 9999, or textual placeholders like Other. These should be replaced with NA during cleaning. Repeated NA counts (e.g., NA's: 25) across certain variables suggest missing information originating from the same borrower rows. These relationships should be examined. Columns containing URLs or HTML-like descriptions contribute no analytical value and should be removed unless needed for text analysis. Issues to fix include extreme outliers, placeholder values requiring conversion to NA, text cleanup for free-text fields, consistent NA handling across affected rows, and parsing of date fields. Irrelevant columns such as url or verbose descriptions can be dropped. After cleaning, a new summary should be generated to confirm improvements.
 
 ```{r}
 # vector of placeholder values to replace
@@ -480,14 +485,14 @@ logic_emp <- data %>%
   mutate(
     row_id = row_number(),
     
-    # Fälle, in denen eine Länge angegeben ist, aber kein Arbeitgeber existiert
+    # Cases where emp_length is present but emp_title is missing/empty
     inconsistency_emp_missing_title = (emp_title == "" | is.na(emp_title)) & !is.na(emp_length),
     
-    # Fälle, in denen ein Arbeitgeber existiert, aber emp_length fehlt
+    # Cases where emp_title is present but emp_length is missing
     inconsistency_missing_length = !(emp_title == "" | is.na(emp_title)) & is.na(emp_length)
   )
 
-# Zusammenfassung
+# Summary
 logic_emp %>%
   summarise(
     inconsistencies_title_missing = sum(inconsistency_emp_missing_title, na.rm = TRUE),
@@ -496,7 +501,7 @@ logic_emp %>%
 
 ```
 
-Problem!
+The consistency check compares emp_title (free-text job title) with emp_length (standardized tenure). We find 6,314 observations where emp_length is provided but emp_title is missing, and 355 observations showing the opposite pattern. This indicates that missingness in these variables is not deterministic and likely driven by different reporting behaviors (non-disclosure, incomplete application fields, or data ingestion gaps). Because there is no defensible rule to reconstruct the missing field from the present one without introducing bias, we do not correct or drop observations based on this inconsistency. Instead, we treat this as a feature-quality consideration. emp_title is later removed due to high cardinality and limited interpretability for regression, while emp_length is retained as an ordered factor because it is low-dimensional and semantically meaningful.
 
 
 ```{r}
@@ -505,9 +510,40 @@ print(unique(data$policy_code))
 ```
 Policy code only has one value (1). Therefore it is dropped later.
 
+
+
+## Feature Selection and Reduction Strategy
+
+Before implementing data cleaning steps, we define explicit criteria for keeping or excluding
+variables. Each later removal decision is justified by at least one of the following criteria:
+
+1. **Feature semantics / application-time availability (leakage avoidance).**
+   Variables that are not available at loan-application time or that contain post-origination
+   operational outcomes are excluded to avoid leakage and to ensure compatibility with the
+   unseen “reality check” dataset.
+
+2. **Data quality (“too bad to fix”).**
+   Variables with extreme missingness, systematic corruption, implausible ranges, or inconsistent
+   semantics that cannot be repaired reliably are removed.
+
+3. **Preprocessing effort vs. expected benefit.**
+   High-cardinality categorical variables and free-text fields require substantial encoding and
+   normalization effort and can increase overfitting risk. Following an iterative “low-hanging-fruit”
+   approach, we exclude these unless there is clear evidence that they improve performance.
+
+4. **Redundancy and multicollinearity risk.**
+   If multiple variables represent the same underlying concept, we keep the most reliable and
+   interpretable one to reduce noise and prevent unstable model estimates.
+   
+5. **Population homogeneity**
+  Subpopulations with fundamentally different feature semantics and extremely small sample sizes (e.g., joint loan  applications) are excluded to maintain a homogeneous modeling population. This avoids mixing structurally incompatible observations that would otherwise introduce instability and bias.
+
+These criteria are applied consistently in the subsequent preprocessing steps.
+
+
 ## Data Wrangling
 
-Data wrangling is the process of cleaning and transforming raw data into a format that is suitable for analysis. This includes handling missing values, correcting duplicate entries, and addressing any incorrect values in the dataset. The first chapters of this project are per definition also part of data wrangling, but were seperated for better clarity in the code. Cleaning and transforming the data is an iterative process that requires careful consideration of the specific characteristics of the dataset and the goals of the analysis. The better the cleaning and transforming is done, the more reliable and accurate the results of the analysis will be.
+Data wrangling is the process of cleaning and transforming raw data into a format that is suitable for analysis. This includes handling missing values, correcting duplicate entries, and addressing any incorrect values in the dataset. The first chapters of this project are per definition also part of data wrangling, but were separated for better clarity in the code. Cleaning and transforming the data is an iterative process that requires careful consideration of the specific characteristics of the dataset and the goals of the analysis. The better the cleaning and transforming is done, the more reliable and accurate the results of the analysis will be.
 
 ### Duplicated Values
 
@@ -589,7 +625,7 @@ Especially for high columns with high NA-counts, one should contact the data man
 
 We have to be careful to drop all rows or columns with NA-values, since sometimes there is a logic behind a missing value. For example, in the column "mths_since_last_delinq", a missing value could mean that the person has never been delinquent. Dropping these rows would lead to a loss of valuable information. Therefore, we have to carefully analyze each column with missing values and decide on a case-by-case basis how to handle them.
 
--   delinq_2yrs: There are 21 missing values, which is a very small percentage of the total data. These values could be imputed or dropped after further anaylsis.
+-   delinq_2yrs: There are 21 missing values, which is a very small percentage of the total data. These values could be imputed or dropped after further analysis.
 -   inq_last_6mths: There are 21 missing values. These values could be imputed or dropped after further anaylsis.
 -   open_acc: There are 21 missing values. These values could be imputed or dropped after further anaylsis.
 -   pub_rec: There are 21 missing values. These values could be imputed or dropped after further anaylsis.
@@ -601,7 +637,7 @@ We have to be careful to drop all rows or columns with NA-values, since sometime
 -   revol_util: There are 454 missing values. These values could be imputed or dropped after further anaylsis.
 -   collections_12_mths_ex_med: There are 126 missing values. These values could be imputed or dropped after further anaylsis.
 -   mths_since_last_major_derog: There are 599'107 (75.02%) missing values. These missing values likely indicate that the borrower has no major derogatory marks, yet further in-depth analysis is needed. Possible options for imputation in the latter case would be imputation with -1 or to change the datatype to a categorical variable with levels.
--   annual_inc_joint, dti_joint, verification_status_joint: These columns have higher NA-counts due to the fact that they are dependent on the application_type being "JOINT". Dropping these columns would lead to a loss of valuable information for joint applications. A comparison model would have to be made to check whether or not the model gets better when keeping this information for prediciton or not.
+-   annual_inc_joint, dti_joint, verification_status_joint: These columns have higher NA-counts due to the fact that they are dependent on the application_type being "JOINT". Dropping these columns would lead to a loss of valuable information for joint applications. A comparison model would have to be made to check whether or not the model gets better when keeping this information for prediction or not.
 -   tot_coll_amt: There are 63'276 (7.92%) missing values. These values could be imputed or dropped after further anaylsis.
 -   tot_cur_bal: There are 63'276 (7.92%) missing values. These values could be imputed or dropped after further anaylsis.
 -   total_rev_hi_lim: There are 63'276 (7.92%) missing values. These values could be imputed or dropped after further anaylsis.
@@ -627,7 +663,7 @@ columns_to_drop_na <- c("open_acc_6m",
                          "inq_last_12m")
 # Drop the columns from the dataset
 cleaned_data <- data[, -match(columns_to_drop_na, names(data))]
-dim(cleaned_data) # 798'641 rows and 38 columns now
+dim(cleaned_data)
 ```
 
 It is noticeable that there are exactly 25 rows with NA-values in multiple columns. If these 25 rows are always the same, it would make sense to drop these rows altogether instead of imputing the missing values.
@@ -651,7 +687,7 @@ As seen in the output, the 25 rows with NA-values are indeed always the same. Th
 # Remove rows with id values found in na_rows
 cleaned_data <- cleaned_data %>%
   filter(!id %in% na_rows$id)
-dim(cleaned_data) # 798'572 rows and 38 columns now
+dim(cleaned_data)
 ```
 
 A similar trend can be seen in tot_call_amt, tot_cur_bal and total_rev_hi_lim, where exactly 63'276 rows have NA-values in all three columns. We check if these rows are the same and filter them out of the cleaned dataset if so.
@@ -698,7 +734,7 @@ mean(cleaned_data$application_type == "JOINT", na.rm = TRUE) * 100
 
 In the dataset, only 460 rows are labeled as joint applications, corresponding to 0.06% of the total available observations. These records were removed, along with all joint-specific variables, for the following reasons:
 
-#### 1. Extremely Small Sample Size
+#### Extremely Small Sample Size
 
 Joint applications represent only 460 observations out of the full dataset.\
 With such a small proportion (0.06%), this subgroup is too small to:
@@ -709,7 +745,7 @@ With such a small proportion (0.06%), this subgroup is too small to:
 
 Including a subgroup of this size would introduce noise rather than useful signal.
 
-#### 2. Structural Differences Between Joint and Individual Applications
+#### Structural Differences Between Joint and Individual Applications
 
 Joint applications reflect the combined financial profile of two borrowers.\
 This leads to fundamental structural differences compared with single-applicant data:
@@ -721,7 +757,7 @@ This leads to fundamental structural differences compared with single-applicant 
 
 These differences produce incompatible distributions that violate the assumption of data homogeneity needed for model training.
 
-#### 3. Joint-Specific Columns Are Not Usable for Modeling
+#### Joint-Specific Columns Are Not Usable for Modeling
 
 Variables such as `annual_inc_joint`, `dti_joint`, and `verification_status_joint` apply only to joint applications.\
 For over 99.9% of rows, these fields are always NA, making them:
@@ -732,7 +768,7 @@ For over 99.9% of rows, these fields are always NA, making them:
 
 Removing these columns simplifies preprocessing while avoiding misleading predictors.
 
-#### 4. Including Joint Records Reduces Model Stability
+#### Including Joint Records Reduces Model Stability
 
 Joint applications follow different underwriting rules and show distinct patterns of missingness, income distribution, and credit utilisation.\
 Mixing these with single applicants can distort:
@@ -744,7 +780,7 @@ Mixing these with single applicants can distort:
 
 Excluding them leads to a more stable and generalizable model for the primary population of interest.
 
-#### 5. Why Not Build a Separate Model for Joint Applications?
+#### Why Not Build a Separate Model for Joint Applications?
 
 Although joint applications differ structurally, creating a standalone model is not feasible for the following reasons:
 
@@ -850,7 +886,7 @@ top_loan_amounts <- cleaned_data %>%
 print(top_loan_amounts) # Lending cap is found at 35'000, be aware of this in modelling
 ```
 
-We see a high spike in the upper range of the loan amount. This is due to the fact that Lending Club has a maximum loan amount of \$35'000. Therefore, this is not an anomaly but rather a logical boundary.
+The distribution shows a strong spike at $35,000, suggesting an effective upper cap in this dataset. This spike is therefore treated as a data boundary rather than an outlier.
 
 Due to the big range from minimum to maximum loan amount, one could consider to scale this feature before modelling. A log-transformation could also be considered. A log-transformation column of loan amount is added to the cleaned dataset.
 
@@ -890,7 +926,6 @@ print(extreme_annual_inc$lowest)
 print("Highest 5 annual incomes:")
 print(extreme_annual_inc$highest)
 ```
-
 ```{r}
 summary(cleaned_data$annual_inc)
 ```
@@ -921,6 +956,28 @@ extreme_annual_inc_after <- show_extreme_values(cleaned_data, "annual_inc", n = 
 print("Highest 10 annual incomes after fixing:")
 print(extreme_annual_inc_after$highest)
 ```
+
+```{r}
+# Add log-transformed annual income column
+cleaned_data <- cleaned_data %>%
+  mutate(log_annual_inc = log(annual_inc + 1)) # Adding
+
+# Check histogram and boxplot of log-transformed annual income
+ggplot(cleaned_data, aes(x = log_annual_inc)) +
+  geom_histogram(bins = 30) +
+  ggtitle("Histogram of Log-Transformed Annual Income") +
+  theme_minimal()
+ggplot(cleaned_data, aes(y = log_annual_inc)) +
+  geom_boxplot() +
+  ggtitle("Boxplot of Log-Transformed Annual Income") +
+  theme_minimal()
+
+```
+
+The exploratory analysis of annual_inc revealed a highly right-skewed distribution where the majority of borrowers cluster around a median income while a small number of high earners extend the tail significantly. This skewness poses two primary issues for linear modeling. It violates the assumption of normality required for valid hypothesis testing, and it allows high-leverage outliers to disproportionately influence the regression coefficients.
+
+To address this, we applied a natural logarithm transformation: log(x+1). The addition of 1 ensures the function remains defined for zero-income cases. As seen in the transformed visualizations, this operation successfully compresses the extreme right tail and expands the lower range. The resulting distribution is symmetric and bell-shaped, closely approximating a normal distribution.
+
 
 ```{r}
 summary(cleaned_data$annual_inc)
@@ -1023,8 +1080,6 @@ print(nrow(cleaned_data))
 ```
 
 We then examine the opposite contradiction: cases where mths_since_last_delinq == 0 indicates a delinquency in the current reporting period, yet delinq_2yrs == 0 suggests no recent delinquencies. A zero-month value is highly specific and therefore more trustworthy than a summary count that may not have been updated in time. In these cases, we correct the count by setting delinq_2yrs to 1.
-
-ATTENTION: We do a lot of NAs in mths_since_last_delinq with that.
 
 
 ```{r}
@@ -1461,9 +1516,13 @@ Furthermore there are other columns to drop, which aren't useful for modelling o
 
 The variable zip_code is removed during preprocessing even though it is provided only in truncated form (e.g., “365xx”). While this representation partially anonymizes the borrower’s location, it still constitutes a high-cardinality geographic identifier that captures localized effects rather than borrower-specific risk characteristics. The ZIP codes in this form offer limited economic interpretability while increasing the model complexity. Excluding this feature improves robustness and reduces the risk.
 
+The variables id and member_id uniquely identify loans and borrowers but contain no information about borrower risk or pricing. Including identifiers in regression models introduces pure noise and can lead to spurious patterns or overfitting.
+After confirming that no duplicated observations exist, both variables were removed to ensure that all remaining features carry potential predictive meaning.
+
+
 ```{r}
 cleaned_data <- cleaned_data %>%
-  select(-c(id, member_id, desc, zip_code, emp_title, policy_code, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs, mths_since_last_record, pub_rec))
+  select(-c(id, member_id, desc, zip_code, emp_title, policy_code, revol_util, mths_since_last_delinq, mths_since_last_major_derog, delinq_2yrs, mths_since_last_record, pub_rec, loan_amnt, annual_inc))
 ```
 
 
@@ -1553,7 +1612,7 @@ knitr::kable(summary_dims, caption = "Dataset size before and after preprocessin
 
 ```
 
-Preprocessing reduces the dataset from 798,641 observations with 72 features to 734,825 observations with 20 features. The reduction in rows is primarily driven by the removal of joint loan applications and observations with insufficient or ambiguous categorical information, while the reduction in features reflects the exclusion of non-informative identifiers, semantically unavailable variables, and redundant or derived features.
+Preprocessing reduces the dataset from 798,641 observations with 52 features to 734,825 observations with 20 features. The reduction in rows is primarily driven by the removal of joint loan applications and observations with insufficient or ambiguous categorical information, while the reduction in features reflects the exclusion of non-informative identifiers, semantically unavailable variables, and redundant or derived features.
 
 
 
@@ -1563,6 +1622,965 @@ write.csv(cleaned_data,
           row.names = FALSE)
 ```
 
+# Training
+
+## Task and metric
+The objective of this project is to predict the interest rate (int_rate) assigned to a loan application using borrower and loan characteristics from the provided dataset. Interest rates represent a continuous outcome determined by LendingClub’s internal risk assessment and pricing strategy and therefore constitute a supervised regression problem.
+
+Accurate prediction of interest rates is relevant because it reflects the underlying assessment of borrower credit risk and loan characteristics. From a modeling perspective, this task poses several challenges, including nonlinear relationships between predictors and the target, interactions among credit-related variables, and heterogeneous variance across risk profiles.
+
+Interest rate prediction is approached as a supervised regression task. To ensure a fair and reproducible comparison between different modeling approaches, all models are trained and evaluated using the same data splits and evaluation metrics. Any transformation steps that require learning parameters from the data such as imputation is performed exclusively on the training set to prevent information leakage.
+
+Model performance is evaluated using Root Mean Squared Error (RMSE) as the primary metric and Mean Absolute Error (MAE) as a complementary metric. RMSE penalizes large prediction errors more strongly and is therefore well suited for assessing overall predictive accuracy, while MAE provides an intuitive interpretation of the average absolute deviation between predicted and observed interest rates. These metrics are computed on a validation set and used for model comparison and selection.
+
+
+## Loading The preprocessed data
+
+The modeling phase begins by loading the cleaned dataset produced in the preprocessing stage. This dataset contains only application-time–available features and has already undergone extensive quality checks, feature reduction, and logical consistency validation. The file is read from disk to ensure a clean separation between preprocessing and training workflows.
+
+```{r}
+data <- read_csv("cleaned_data.csv")
+```
+
+### Order of levels
+
+Because CSV files do not preserve factor ordering, all ordered categorical variables must be explicitly redefined after loading the preprocessed dataset. Correct ordering is essential because several variables (e.g., employment length, verification status, delinquency severity) encode monotonic risk relationships. Restoring their ordinal structure ensures that downstream preprocessing steps and models correctly interpret relative category severity.
+
+```{r}
+categorical_cols <- names(data)[
+  sapply(data, function(x) is.factor(x) || is.character(x))
+]
+
+categorical_cols
+```
+
+
+```{r}
+num_categories <- sapply(
+  data[categorical_cols],
+  function(x) length(unique(na.omit(x)))
+)
+
+num_categories
+```
+
+#### emp_length
+
+```{r}
+# introduce order for emp_length
+data$emp_length <- factor(
+  data$emp_length,
+  levels = c(
+    "< 1 year",
+    "1 year",
+    "2 years",
+    "3 years",
+    "4 years",
+    "5 years",
+    "6 years",
+    "7 years",
+    "8 years",
+    "9 years",
+    "10+ years"
+  ),
+  ordered = TRUE
+)
+```
+
+```{r}
+levels(data$emp_length)
+is.ordered(data$emp_length)
+```
+
+
+#### verification_status
+
+```{r}
+data$verification_status <- factor(
+  data$verification_status,
+  levels = c(
+    "Not Verified",
+    "Source Verified",
+    "Verified"
+  ),
+  ordered = TRUE
+)
+```
+
+
+```{r}
+levels(data$verification_status)
+is.ordered(data$verification_status)
+```
+
+#### home_ownership
+
+```{r}
+data$home_ownership <- factor(
+  data$home_ownership,
+  levels = c("RENT", "MORTGAGE", "OWN"),
+  ordered = TRUE
+)
+```
+
+```{r}
+levels(data$home_ownership)
+is.ordered(data$home_ownership)
+```
+
+
+#### delinq_2yrs_cat
+
+```{r}
+data$delinq_2yrs_cat <- factor(
+  data$delinq_2yrs_cat,
+  levels = c("0", "1", "2", "3+"),
+  ordered = TRUE
+)
+```
+
+
+```{r}
+levels(data$delinq_2yrs_cat)
+is.ordered(data$delinq_2yrs_cat)
+```
+
+#### delinq_recency
+
+```{r}
+data$delinq_recency <- factor(
+  data$delinq_recency,
+  levels = c(
+    "0",
+    "1-6",
+    "7-12",
+    "13-24",
+    "24+",
+    "none"
+  ),
+  ordered = TRUE
+)
+```
+
+```{r}
+table(data$delinq_recency)
+is.ordered(data$delinq_recency)
+```
+
+#### major_derog_recency
+
+```{r}
+data$major_derog_recency <- factor(
+  data$major_derog_recency,
+  levels = c(
+    "0",
+    "1-6",
+    "7-12",
+    "13-24",
+    "25-48",
+    "49-84",
+    "none"
+  ),
+  ordered = TRUE
+)
+```
+
+```{r}
+table(data$major_derog_recency)
+is.ordered(data$major_derog_recency)
+```
+
+
+```{r}
+data_ordered <- data
+```
+
+
+## Imputation of missing values
+
+Although extensive preprocessing was performed to resolve logical inconsistencies and remove unusable variables, some predictors still contain missing values. These remaining missing values represent either genuinely unknown information (e.g., employment length not reported) or structurally meaningful absence like no delinquency history. Imputation is therefore handled during model training rather than during preprocessing to avoid information leakage and to allow imputation parameters to be learned exclusively from the training data.
+
+
+```{r}
+missing_summary <- data.frame(
+  column = names(data),
+  missing_count = sapply(data, function(x) sum(is.na(x))),
+  missing_pct = sapply(data, function(x) mean(is.na(x)) * 100)
+) %>%
+  arrange(desc(missing_pct))
+
+knitr::kable(
+  head(missing_summary, 10),
+  digits = 4,
+  caption = "Top 10 features by missing-value percentage and count (after preprocessing)"
+)
+```
+
+
+The dataset is split into three mutually exclusive subsets: training, validation, and test. The training set is used to estimate model parameters and preprocessing statistics, the validation set is used for model comparison and tuning, and the test set is held out for final, unbiased evaluation.
+
+The split is performed before any imputation or transformation that learns from the data distribution. This ensures that no information from the validation or test sets leaks into the training process. A fixed random seed is used to guarantee reproducibility.
+
+```{r}
+library(tidymodels)
+library(xgboost)
+
+set.seed(123)
+
+n <- nrow(data_ordered)
+idx_all <- sample.int(n)
+
+n_train <- floor(0.70 * n)
+n_val   <- floor(0.15 * n)
+
+train_idx <- idx_all[1:n_train]
+val_idx   <- idx_all[(n_train + 1):(n_train + n_val)]
+test_idx  <- idx_all[(n_train + n_val + 1):n]
+
+train <- data_ordered[train_idx, ]
+val   <- data_ordered[val_idx, ]
+test  <- data_ordered[test_idx, ]
+
+val_split <- rsample::make_splits(
+  list(analysis = train_idx, assessment = val_idx),
+  data = data_ordered
+)
+
+val_rs <- rsample::manual_rset(
+  splits = list(val_split),
+  ids    = "train_val"
+)
+```
+
+The dataset was split into three mutually exclusive subsets:
+- Training set: used to learn model parameters and preprocessing statistics
+- Validation set: used for model selection and tuning
+- Test set: held out for final, unbiased evaluation
+
+Splitting was performed before any imputation to prevent leakage.
 
 
 
+```{r}
+ggplot(bind_rows(
+  train %>% mutate(split="train"),
+  val   %>% mutate(split="val"),
+  test  %>% mutate(split="test")
+), aes(int_rate, fill=split)) +
+  geom_density(alpha=0.4)
+```
+
+To verify that the random split preserves the target distribution across subsets, the density of the interest rate is compared between the training, validation, and test sets. Similar distributions across splits indicate that no systematic sampling bias was introduced during splitting.
+
+### Training-time preprocessing pipeline
+
+```{r}
+# 2) Recipe (ALL preprocessing here; trained on analysis only)
+# ----------------------------
+rec <- recipe(int_rate ~ ., data = train) %>%
+  # --- special handling for major_derog_recency (do this before generic nominal steps) ---
+  step_mutate(
+    major_derog_recency = if_else(
+      is.na(major_derog_recency),
+      "none",
+      as.character(major_derog_recency)
+    )
+  ) %>%
+  step_string2factor(major_derog_recency) %>%   # ensures it's a factor again
+  step_novel(major_derog_recency) %>%
+  step_unknown(major_derog_recency, new_level = "Unknown") %>%
+
+  # --- emp_length: explicit Missing level ---
+  step_unknown(emp_length, new_level = "Missing") %>%
+
+  # --- generic protection for *other* categoricals ---
+  step_novel(all_nominal_predictors(), -major_derog_recency) %>%
+  step_unknown(all_nominal_predictors(), -major_derog_recency, new_level = "Unknown") %>%
+
+  # --- numeric imputation learned on analysis only ---
+  step_impute_median(all_numeric_predictors()) %>%
+
+  # --- encoding ---
+  step_integer(all_ordered_predictors(), zero_based = FALSE) %>%
+  step_dummy(all_nominal_predictors(), one_hot = FALSE) %>%
+  step_zv(all_predictors())
+```
+
+
+All preprocessing steps required for modeling are implemented using a recipes pipeline from the tidymodels framework. This approach ensures that preprocessing transformations are estimated exclusively on the training data and then applied consistently to validation and test sets.
+
+The recipe includes the following key components:
+
+- **Explicit handling of structurally meaningful missing values**  
+  Certain ordinal variables (e.g., major_derog_recency, emp_length) use missingness to encode meaningful absence. These variables are given explicit “none” or “Missing” categories rather than being imputed numerically.
+
+- **Robust handling of categorical variables**  
+  Novel and previously unseen factor levels are handled using step_novel() and step_unknown() to ensure that validation and test data can be processed safely without errors.
+
+- **Numeric imputation**  
+  All numeric predictors are imputed using the median, with imputation parameters learned exclusively from the training set. Median imputation is robust to skewed distributions and extreme values, which are common in credit-related data.
+
+- **Encoding for modeling**  
+  Ordered factors are encoded as integer scores that preserve ordering, while nominal categorical variables are one-hot encoded. Zero-variance predictors are removed automatically to prevent numerical issues during training.
+
+This recipe-based design provides a clean separation between data preprocessing and model fitting, prevents information leakage, and ensures reproducibility across modeling experiments.
+
+
+## Linear model
+```{r}
+rec_prep <- prep(rec, training = train)
+train_baked <- bake(rec_prep, new_data = train)
+```
+
+### Assumption Checking
+Before fitting a linear regression model, the validity of the underlying modeling assumptions must be assessed. In particular, linear regression assumes that the relationship between each predictor and the response variable is approximately linear and that the effects of the predictors are additive. Violations of these assumptions can lead to biased estimates and reduced predictive performance.
+
+#### Linearity along the axes
+To assess the linearity assumption, scatterplots of each predictor against the target variable (int_rate) were inspected using the preprocessed training data. For each predictor, a locally weighted smoothing curve (LOWESS) was overlaid to highlight potential deviations from linearity. This visualization facilitates the identification of nonlinear trends, curvature, and heteroscedastic patterns that may affect the suitability of a linear model.
+```{r, dev='png', dpi=300, out.width="100%"}
+pred_names <- setdiff(colnames(train_baked), "int_rate")
+
+plots_per_page <- 6
+idx <- split(pred_names, ceiling(seq_along(pred_names) / plots_per_page))
+
+for (group in idx) {
+  par(mfrow = c(2, 3))
+  for (nm in group) {
+    plot(
+      train_baked[[nm]],
+      train_baked$int_rate,
+      xlab = nm,
+      ylab = "int_rate",
+      pch = 16,
+      col = rgb(0, 0, 0, 0.2)
+    )
+    lines(
+      lowess(train_baked[[nm]], train_baked$int_rate),
+      col = "red",
+      lwd = 2
+    )
+  }
+  par(mfrow = c(1, 1))
+  readline("Press <Enter> for next set...")
+}
+
+```
+The figures above display scatterplots of each preprocessed predictor against the target variable (int_rate) using the training data. A locally weighted smoothing curve (LOWESS) is overlaid in red to highlight the average trend in each relationship. The purpose of these plots is to visually assess the linearity assumption of linear regression, which requires that the expected value of the response is an approximately linear function of the predictors.
+
+**Interpretation of dummy-encoded predictors ** 
+Several predictors appear as vertical bands rather than continuous clouds. These correspond to dummy-encoded or discretized variables (e.g., one-hot encoded categorical variables or integer-encoded ordered factors). For such predictors, traditional notions of linearity along a continuous axis do not apply. In these cases, the plots primarily reflect mean differences in the response across categories rather than functional relationships. As a result, banding or non-smoothness in these plots should not be interpreted as evidence of nonlinearity.
+
+What we look for in these plots For continuous predictors, linearity is assessed by examining whether the LOWESS curve:
+- follows an approximately straight or gently sloped path,
+- does not exhibit pronounced curvature (e.g., U-shaped or S-shaped patterns),
+- does not show abrupt changes in slope across the predictor range.
+
+Assessment of observed relationships and Feature Screening Visual inspection of the continuous predictors reveals significant structural differences in their relationships with the target variable. While several variables, such as inq_last_6mths and term, satisfy the linearity assumption by displaying monotonic, relatively straight trends, key financial metrics exhibit pronounced non-linear curvature.
+
+Specifically, variables such as revol_bal, tot_cur_bal, and total_rev_hi_lim display "U-shaped" or "hockey-stick" patterns. In these cases, interest rates initially drop as the balance increases but eventually plateau or trend upward at higher values. Because a standard linear model is mathematically constrained to a single straight-line slope, it cannot capture these localized bends, leading to systematic prediction errors.
+
+To ensure the integrity of the OLS baseline, a Strict Linearity Screening step was implemented. Only predictors demonstrating a consistent linear signal along their axes—such as term, log_annual_inc, dti, and inq_last_6mths—were retained for the model. Predictors exhibiting structural non-linearity were intentionally excluded from the final OLS specification to establish the maximum explanatory power achievable through purely additive, linear effects. These excluded variables represent a significant portion of the predictive signal that will be addressed in subsequent non-parametric analysis, where their structural complexity can be captured natively.
+
+```{r}
+numeric_preds <- train_baked %>% dplyr::select(-int_rate)
+
+cor_matrix <- cor(
+  numeric_preds,
+  use = "pairwise.complete.obs"
+)
+
+cor_plot <- cor_matrix
+cor_plot[lower.tri(cor_plot)] <- NA
+diag(cor_plot) <- NA
+```
+
+```{r, dev='png', dpi=300, out.width="100%"}
+corrplot::corrplot(
+  cor_plot,
+  method = "color",
+  tl.cex = 0.5,
+  tl.col = "black",
+  na.label = " ",
+  diag = FALSE
+)
+
+```
+The figure displays the pairwise correlations among the predictors. Blue shades indicate positive correlations, red shades indicate negative correlations, and lighter colors correspond to weaker associations. While most predictor pairs exhibit low to moderate associations, the matrix reveals clusters of high correlation among wealth and credit metrics.
+
+**Identification of highly correlated predictor pairs**
+To explicitly identify predictor pairs with strong linear relationships, correlations with an absolute value greater than 0.7 were extracted from the upper triangular portion of the matrix.
+```{r}
+cor_pairs <- cor_matrix
+diag(cor_pairs) <- NA
+cor_pairs[lower.tri(cor_pairs)] <- NA
+
+high_corr <- which(abs(cor_pairs) > 0.7, arr.ind = TRUE)
+
+high_corr_pairs <- data.frame(
+  var1 = rownames(cor_pairs)[high_corr[, 1]],
+  var2 = colnames(cor_pairs)[high_corr[, 2]],
+  corr = cor_pairs[high_corr]
+)
+
+high_corr_pairs
+
+```
+Identification of highly correlated predictor pairs To explicitly identify predictor pairs with strong linear relationships, correlations with an absolute value greater than 0.7 were extracted:
+
+The identified correlations correspond to expected structural dependencies:
+- revol_bal and total_rev_hi_lim: A strong positive correlation is inherent, as revolving balances are constrained by total credit limits.
+- delinq_2yrs_cat and delinq_recency: A strong negative correlation reflects overlapping information regarding a borrower's delinquency history.
+- major_derog_recency dummy levels: The negative correlation is a mathematical byproduct of the one-hot encoding process for categorical variables.
+
+These findings confirm that multicollinearity is localized. However, given that revol_bal and total_rev_hi_lim were already identified as non-linear during the LOWESS screening, their high mutual correlation further justifies their exclusion from the linear model to prevent coefficient instability and structural misalignment.
+
+To further assess multicollinearity in the context of the full regression model, Variance Inflation Factors (VIFs) were computed using a linear model fitted on the preprocessed training data. Unlike pairwise correlations, VIFs quantify the extent to which the variance of each regression coefficient is inflated due to linear dependence with the remaining predictors in the model.
+
+The VIF values reveal specific clusters of high multicollinearity:
+- Structural Redundancy: The categorical levels for major_derog_recency exhibit extreme VIF values, ranging from 129.9 to 1209.06. These spikes are a mathematical byproduct of the "dummy variable trap" and the structural dependency inherent when one-hot encoding a categorical variable with many levels.
+- Domain-Related Overlap: Predictors related to loan purpose, such as purpose_debt_consolidation (30.4) and purpose_credit_card (23.5), also show high VIFs. This indicates substantial overlap in how these categories explain the variation in interest rates.
+- Continuous Predictors: Most continuous variables, including term (1.25), dti (1.34), and log_annual_inc (1.90), maintain low VIF values, suggesting their individual contributions are relatively independent within the linear framework.
+
+In light of these findings, no predictors were removed based solely on VIF values. While high VIFs exist for certain categorical levels, they are primarily attributable to the structural properties of dummy encoding rather than widespread redundancy. Retaining these variables for the initial 'Full Model' is essential for documenting how OLS attempts to resolve these overlapping signals before we transition to the more robust, strictly screened baseline..
+
+```{r}
+lm_vif <- lm(int_rate ~ ., data = train_baked)
+
+vif_values <- car::vif(lm_vif)
+
+vif_values
+```
+
+#### Summary on Linearity and Preliminary Screening
+The linearity and additivity assumptions were assessed through visual inspection of predictor–response relationships. While several variables—such as inq_last_6mths and term—exhibit monotonic, straight trends, key financial metrics like revol_bal and total_rev_hi_lim display pronounced non-linear curvature.
+
+The systematic "U-shaped" patterns observed in these predictors indicate that a standard linear model—constrained to a single straight-line slope—cannot capture these localized structural bends. This justifies the Strict Linearity Screening implemented to isolate only the most linear predictors for the final baseline. However, to fully document the structural failure of a "naive" OLS approach, we proceed first with a full-specification model to observe how these non-linearities manifest in the multivariate residuals.
+
+This justifies the Strict Linearity Screening implemented to isolate only the most linear predictors for the final baseline. However, to fully document the structural failure of a 'naive' OLS approach, we proceed first with a full-specification model. This allows us to observe how these non-linearities—identified here as 'hidden' in the univariate axes—manifest as systematic bias in the multivariate residuals, eventually necessitating deeper diagnostics via Component+Residual (C+R) plots.
+
+### Linear Model Training and Diagnostic Evaluation
+Having identified significant non-linearity in several key predictors and establishing a screened predictor set, the analysis proceeds to the estimation and evaluation of a linear model. This chapter focuses on fitting the model to the "linear-ready" data and assessing post-estimation diagnostics to determine if the structural misalignment previously observed has been successfully mitigated.
+
+Specifically, attention is given to evaluating residual behavior, including checks for heteroscedasticity and departures from normality, as well as identifying outliers and influential observations that may disproportionately affect model estimates. A primary goal of this stage is to verify if the Residuals vs Fitted plot now exhibits the randomness required for a valid OLS fit, or if "hidden" non-linearities remain between the axes of the selected predictors.
+
+Multicollinearity is also revisited in the context of the fitted model to ensure coefficient stability following the removal of redundant variables. These diagnostics are essential for defining the performance baseline of a purely additive model before comparing it to alternative non-parametric approaches.
+
+To ensure consistency and reproducibility, the model fitting and diagnostic procedures are encapsulated in a dedicated function that consolidates estimation, diagnostic output, and visualization. This function is applied to the refined model specification to quantify the "information gap" between the linear baseline and the true complexity of the data.
+
+```{r, dev='png', dpi=300, out.width="100%"}
+prepare_linear_model <- function(df, predictor_list, target_var) {
+  library(car)
+  
+  # 1. Create the formula
+  formula_str <- paste(target_var, "~", paste(predictor_list, collapse = " + "))
+  model_formula <- as.formula(formula_str)
+  
+  # 2. Correlation Matrix (numeric columns only)
+  num_subset <- df[, c(target_var, predictor_list)]
+  num_cols <- sapply(num_subset, is.numeric)
+  
+  cat("\n--- Correlation Matrix (Numeric Predictors Only) ---\n")
+  print(round(cor(num_subset[, num_cols], use = "complete.obs"), 2))
+  
+  # 3. Fit the Linear Model
+  fit <- lm(model_formula, data = df)
+  
+  # 4. Model Summary
+  cat("\n--- Model Summary ---\n")
+  print(summary(fit))
+  
+  # 5. Multicollinearity Check (VIF)
+  cat("\n--- Variance Inflation Factor (VIF) ---\n")
+  print(car::vif(fit, type = "predictor"))
+  
+  # 6. Outlier Detection: Studentized Residuals
+  st_res <- MASS::studres(fit)
+  outlier_indices <- which(abs(st_res) > 3)
+  cat("\n--- Potential Outliers (|Studentized Residual| > 3): ",
+      length(outlier_indices), " ---\n")
+  
+  # 7. Influence Check: Cook's Distance
+  cooks_d <- cooks.distance(fit)
+  high_influence_indices <- which(cooks_d > (4 / nrow(df)))
+  cat("--- High Influence Points (Cook's D > 4/n): ",
+      length(high_influence_indices), " ---\n")
+  
+  # 8. Diagnostic Plots
+  par(mfrow = c(2, 2))
+  plot(fit)
+  par(mfrow = c(1, 1))
+  
+  return(fit)
+}
+
+```
+```{r}
+my_predictors <- c("term","emp_length","verification_status","dti","inq_last_6mths","total_acc","tot_cur_bal","log_loan_amnt","delinq_2yrs_cat","delinq_recency","acc_now_delinq_bin","purpose_credit_card","purpose_debt_consolidation","purpose_home_improvement","purpose_house","purpose_major_purchase","purpose_medical","purpose_moving","purpose_other","purpose_renewable_energy","purpose_small_business","purpose_vacation","purpose_wedding", "log_annual_inc")
+final_model <- prepare_linear_model(
+  df = train_baked,
+  predictor_list = my_predictors,
+  target_var = "int_rate"
+)
+```
+#### First Model Specification (Unscreened)
+After fitting the initial linear model and observing the diagnostic outputs, we conducted a deeper investigation into the structural integrity of the relationships through Component+Residual (C+R) plots. This step is crucial for identifying "hidden" non-linearity that simple bivariate scatterplots might miss.
+
+**Interpretation of Results and Diagnostic Validation** 
+The initial estimation results for the training dataset provide a statistically significant but structurally incomplete representation of the data. While global significance (p-value<2.2×10-16) confirms that the predictors collectively explain more variance than a null model, the diagnostic plots reveal critical violations of standard Ordinary Least Squares (OLS) assumptions.
+
+**Post-Estimation Diagnostic Assessment **
+The diagnostic plots identify several critical failures in the model's functional form:
+- Linearity (Residuals vs Fitted): The plot reveals a distinct, downward-sloping LOWESS curve rather than a random horizontal distribution of points. This systematic pattern indicates the model consistently overestimates interest rates at low values and underestimates them in the middle range.
+- The "Floor" Effect: A sharp, straight-line boundary observed at the lower edge of the residual cloud confirms the presence of a minimum interest rate "floor" that the linear model fails to respect, leading to systematic prediction errors for low-risk borrowers.
+- Homoscedasticity (Scale-Location): A "funneling" effect confirms heteroscedasticity, where the variance of the residuals changes across different fitted values, suggesting that the model's reliability is inconsistent across the interest rate spectrum.
+- Normality (Q-Q Residuals): Substantial deviations from the reference line at both extremes indicate "heavy tails," where the model fails to account for extreme interest rate cases.
+
+**Multivariate Linearity Analysis (C+R Plots)**
+To precisely identify which predictors were driving these violations, we generated Component+Residual (C+R) Plots (Images edf20f, edf24e, edf28c). These plots visualize the relationship between a predictor and the response while accounting for the effects of all other variables in the model.
+
+```{r warning=FALSE, dev='png', dpi=300, out.width="100%"}
+# Take a random sample of 10,000 rows to speed up the plotting
+# The structural "bend" will still be clearly visible
+set.seed(123)
+sample_indices <- sample(1:nrow(train_baked), 10000)
+sample_df <- train_baked[sample_indices, ]
+
+# Fit a temporary model on the sample using your final formula
+sample_model <- lm(formula(final_model), data = sample_df)
+
+# Now run the C+R plots
+library(car)
+crPlots(sample_model)
+```
+Findings from C+R Plots:
+- Hidden Non-Linearity: Several predictors that appeared monotonic in isolation exhibit pronounced structural curvature in a multivariate context. Specifically, variables like total_acc and tot_cur_bal show "humped" or U-shaped magenta lines, proving that a single linear slope is a poor fit for their actual contribution.
+- Interaction Traps: The divergence between the dashed blue line (linear fit) and the solid magenta line (data trend) in many plots suggests that the additive assumption of OLS is failing. The model is forced to pick an "average" slope that does not accurately represent the data across its range.
+
+**Evaluation of Potential Mitigation Strategies **
+Based on these diagnostics, we evaluated strategies to improve model validity:
+- Feature Pruning: Removing variables with high VIF values addresses coefficient instability but does not resolve the structural curvature seen in the residuals.
+- Strict Linearity Screening: The most effective mitigation was the isolation of predictors that maintained a straight partial residual line—such as inq_last_6mths, term, and log_annual_inc. This screening ensures the linearity assumption is satisfied for the baseline model.
+
+### Final Refinement: The Strictly Linear Model
+The insights gained from the Component+Residual (C+R) plots confirmed that the initial model's structural misalignment was driven by partial non-linearities and complex interactions among credit and wealth metrics. To establish a statistically valid baseline that adheres strictly to the fundamental assumptions of Ordinary Least Squares (OLS), a final model was estimated using only those predictors that demonstrated additive and monotonic relationships with the target variable.
+
+The following code implements this refined specification:
+```{r, dev='png', dpi=300, out.width="100%"}
+my_predictors <- c(
+  "term",
+  "log_annual_inc",
+  "verification_status",
+  "dti",
+  "inq_last_6mths",
+  "log_loan_amnt",
+  "delinq_2yrs_cat"
+)
+final_model <- prepare_linear_model(
+  df = train_baked,
+  predictor_list = my_predictors,
+  target_var = "int_rate"
+)
+```
+The estimation of this refined model provides the following diagnostic and performance metrics:
+
+- Model Performance:The refined model achieves an Adjusted R2 of 0.317. While this is a decrease from the initial model's 0.442, it represents a more honest assessment of the variance that can be captured using purely linear effects.
+- Linearity Verification:  As shown in the Residuals vs Fitted plot (Image ee4c44), the red LOWESS line is now nearly horizontal. This confirms that the systematic bias observed in previous iterations has been successfully mitigated by removing the non-linear predictors.
+- Multicollinearity: All Variance Inflation Factors (VIF) for this specification are below 1.6. This ensures that the individual coefficients for variables like log_annual_inc and inq_last_6mths are stable and interpretable without the distortion of redundant predictors.
+
+**Justification for the Refined Baseline**
+
+This model serves as the only structurally valid linear baseline for the lending data. By prioritizing assumption adherence over raw R2, we have isolated the primary linear drivers of interest rates—specifically term length and recent credit inquiries—from the non-linear noise of complex financial balances.
+
+The difference in explanatory power between the naive model (0.44) and this valid baseline (0.31) defines the "Information Gap". This gap quantifies the structural signal that a linear framework is mathematically unable to capture. The persistence of this gap, alongside the "floor effect" visible in the residuals, provides the empirical justification for moving toward non-parametric methodologies like Random Forests, which can natively integrate the non-linear signals discarded here.
+
+
+## Random Forest
+
+The diagnostic evaluation of the linear regression model revealed significant violations of the linearity assumption. The residuals displayed a clear systematic curvature and heteroscedasticity, indicating that a simple additive linear surface is insufficient to capture the complex relationships between borrower characteristics and interest rates.
+
+To address these limitations, we employ a Random Forest (RF) model. Random Forest is an ensemble learning method that constructs a multitude of decision trees during training and outputs the mean prediction of the individual trees.
+
+1.  **Handling Non-Linearity:** Decision trees naturally model non-linear relationships by partitioning the feature space into rectangular regions. They do not assume a straight-line relationship and can approximate complex curves (e.g., the "floor" effect observed in low-interest loans).
+2.  **Interaction Effects:** Trees automatically capture interactions between features (e.g., the risk of a high DTI might depend on the verification status) without the need to manually specify interaction terms.
+3.  **Robustness:** By averaging the results of many decorrelated trees, Random Forests reduce the variance associated with individual decision trees, making them more robust to noise and outliers than single trees.
+
+### Hyperparameter Configuration
+Random Forests have fewer hyperparameters to tune compared to gradient boosting, but two are critical for controlling model complexity and decorrelation:
+
+* **mtry:** The number of predictors that will be randomly sampled at each split when creating the tree models.
+* **min_n:** The minimum number of data points in a node that are required for the node to be split further.
+
+Given the large size of the dataset ($N > 500,000$), training a large ensemble is computationally expensive. The optimal configuration identified was mtry = 14 and min_n = 34. A relatively high mtry (14 out of ~20 features) suggests that the model benefits from a broad view of the features at each split, rather than relying on a few dominant predictors.
+
+### Training and Tuning
+We define the final model specification using the ranger engine for computational efficiency.
+
+```{r}
+library(tidymodels)
+library(ranger)
+
+# 1. Define the specific "winning" model directly
+# We skip the tuning grid here to save computation time during the report generation
+final_rf_spec <- rand_forest(
+  mtry  = 14,
+  min_n = 34,
+  trees = 500
+) %>%
+  set_engine("ranger", importance = "impurity", num.threads = 4) %>%
+  set_mode("regression")
+
+# 2. Create the final workflow
+final_rf_workflow <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(final_rf_spec)
+
+# 3. Fit the model on the full training set
+# (This trains the final model on all data in 'train')
+rf_fit <- fit(final_rf_workflow, data = train)
+
+print(rf_fit)
+```
+
+Hyperparameter Justification
+
+To optimize the Random Forest for generalization on unseen loan data, we tuned the following key hyperparameters. The selected values reflect specific characteristics of the LendingClub dataset:
+
+- mtry = 14 (Variables per Split)
+We selected a significantly higher value 14, which allows the model to consider nearly 70% of the available predictors at every split. This high value suggests that the predictive signal for interest rates is diffuse rather than concentrated in one or two dominant features. By sampling more variables at each node, we ensure that the trees can consistently find the best available splitter, even when the strongest predictors (like term or dti) might not be in a smaller random sample. This configuration pushes the model closer to "Bagging" (Bootstrap Aggregating), prioritizing low bias.
+
+- min_n = 34 (Minimum Node Size)
+The minimum node size was set to a relatively large value to regularize tree growth. Financial loan data is noisy and heterogeneous, and very small terminal nodes risk capturing idiosyncratic borrower behavior rather than stable population-level patterns. Enforcing a minimum of 34 observations per leaf node reduces variance and discourages overly complex tree structures, improving robustness on unseen data.
+
+- trees = 500 (Ensemble Size)
+We selected 500 trees to ensure stable ensemble predictions. As the number of trees in a Random Forest increases, the variance of the aggregated prediction decreases and the ensemble converges toward a stable average. While individual trees are not fully independent, increasing the forest size empirically reduces prediction variability. In practice, performance improvements typically plateau after several hundred trees, making 500 a commonly used compromise between predictive stability and computational efficiency for large-scale datasets.
+
+### Performance Evaluation
+We evaluate the final Random Forest model on the held-out test set to assess its generalization performance.
+
+```{r, dev='png', dpi=300, out.width="100%"}
+library(yardstick)
+
+# 1. Generate predictions on the test set
+rf_predictions <- predict(rf_fit, new_data = test)
+
+# 2. Combine with true values
+rf_results <- bind_cols(rf_predictions, test) %>%
+  select(.pred, int_rate)
+
+# 3. Calculate Metrics
+rf_rmse <- rmse(rf_results, truth = int_rate, estimate = .pred)
+rf_mae  <- mae(rf_results, truth = int_rate, estimate = .pred)
+rf_mse  <- mean((rf_results$int_rate - rf_results$.pred)^2)
+rf_rsq  <- rsq(rf_results, truth = int_rate, estimate = .pred)
+
+# 4. Display Results
+cat("Random Forest Performance on Test Set:\n")
+print(rf_rmse)
+print(rf_mae)
+print(paste("MSE:", rf_mse))
+print(rf_rsq)
+
+# 5. Visual Check: Predicted vs Observed
+ggplot(rf_results, aes(x = int_rate, y = .pred)) +
+  geom_point(alpha = 0.1, color = "darkblue") +
+  geom_abline(lty = 2, color = "red") +
+  labs(
+    title = "Random Forest: Predicted vs. Actual Interest Rates",
+    x = "Actual Interest Rate",
+    y = "Predicted Interest Rate"
+  ) +
+  theme_minimal()
+```
+
+
+The Predicted vs. Actual scatter plot visualizes the model’s performance on the test set. The data points show a clear alignment with the red identity line (y = x), indicating that the Random Forest successfully captures the relationship between borrower characteristics and interest rates without the strong systematic curvature typically observed in linear models.
+A notable feature of the plot is the vertical banding structure. This arises because LendingClub interest rates are not fully continuous but are assigned in discrete loan sub-grades, resulting in clusters of observations at specific interest rate levels.
+At the extremes of the target distribution, the model exhibits mild regression-to-the-mean behavior: very low interest rates tend to be slightly over-predicted, while very high interest rates (above approximately 25%) are systematically under-predicted. This effect is a well-known characteristic of tree-based ensemble methods, which generate predictions by averaging over terminal nodes and therefore have limited ability to extrapolate beyond the boundaries of the observed training data.
+Additionally, the spread of predictions increases for higher interest rates, indicating greater uncertainty in this region. This heteroskedasticity reflects the higher variability and heterogeneity associated with riskier loan segments. Overall, the model demonstrates stable and well-calibrated performance across the majority of the interest rate range, with limitations that are consistent with the underlying modeling approach.
+
+## XGBoost
+Following the Random Forest analysis, the predicted-versus-actual diagnostics revealed two characteristic patterns:
+
+(1) a strong overall fit capturing the global structure of interest rate determination, and
+(2) a systematic regression-to-the-mean effect, particularly at the lower and upper extremes of the interest rate distribution.
+
+While this behavior is well understood and inherent to bagging-based ensemble methods such as Random Forests, it suggests potential room for improvement—especially in modeling extreme interest rates and reducing bias at the boundaries of the target space.
+To address these limitations, we employ Extreme Gradient Boosting (XGBoost), a boosting-based tree ensemble method. Unlike Random Forests, which grow trees independently and average their predictions, XGBoost builds trees sequentially, with each new tree focusing on correcting the residual errors of the previous ensemble. This sequential error-correcting mechanism makes XGBoost particularly well suited for capturing complex, non-linear relationships and subtle interactions that may be underrepresented in purely averaging-based models.
+We therefore expect to reduce systematic bias at the extremes of the interest rate distribution,
+improve predictive accuracy for high-risk loan segments and provide a stronger overall bias–variance trade-off compared to the Random Forest model.
+
+
+```{r}
+library(tidymodels)
+library(xgboost)
+library(vip) 
+
+# 1. Define the Winning Model Architecture directly
+final_xgb_spec <- boost_tree(
+  trees          = 500,
+  tree_depth     = 5,
+  min_n          = 2,
+  loss_reduction = 0.05,
+  sample_size    = 0.43,
+  mtry           = 32,
+  learn_rate     = 0.06
+) %>%
+  set_engine("xgboost", tree_method = "hist") %>% # Kept for M1 Speed
+  set_mode("regression")
+
+# 2. Create Workflow
+final_xgb_workflow <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(final_xgb_spec)
+
+# 3. Fit the model on the Training Data
+# We fit on the training set to evaluate on the test set
+xgb_fit <- fit(final_xgb_workflow, data = train)
+
+print(xgb_fit)
+```
+### Hyperparameter Configuration
+
+- trees = 500 (Number of Boosting Iterations)
+During experimentation, we observed that model performance improved steadily as the number of trees increased, with predictions becoming more stable and less sensitive to individual observations. However, we observed overfitting after 500+.
+
+- learn_rate = 0.06
+We found that larger learning rates led to unstable predictions and increased sensitivity to noise, particularly for high interest rates. Reducing the learning rate resulted in smoother convergence and more stable out-of-sample behavior.
+
+- tree_depth = 5 (Maximum Tree Depth)
+Deeper trees produced overly irregular predictions and increased variance. A maximum depth of 5 emerged as a reasonable compromise, enabling the model to represent non-linear relationships and moderate interaction effects while maintaining stable and interpretable prediction patterns.
+
+- mtry = 32 (Feature Subsampling)
+After preprocessing, the feature space expands substantially due to dummy encoding. Using a relatively large but limited number of predictors per split ensured that informative features were frequently available, while preventing the model from repeatedly relying on the same dominant variables. Empirically, this setting reduced erratic behavior and improved generalization compared to both very small and very large values of mtry.
+
+- min_n = 2 (Minimum Observations per Leaf)
+Allowing small terminal nodes improved the model’s ability to adapt to localized structure in the data, particularly in segments associated with higher interest rates. Although very small leaf sizes can increase overfitting risk, we observed that this was effectively controlled through other regularization mechanisms (limited depth, shrinkage, subsampling, and loss reduction). As a result, min_n = 2 preserved flexibility without leading to unstable predictions.
+
+
+
+```{r, dev='png', dpi=300, out.width="100%"}
+library(yardstick)
+
+# 1. Generate predictions on Test Set
+xgb_predictions <- predict(xgb_fit, new_data = test)
+
+# 2. Combine with Truth
+xgb_results <- bind_cols(xgb_predictions, test) %>%
+  select(.pred, int_rate)
+
+# 3. Calculate Metrics
+xgb_rmse <- rmse(xgb_results, truth = int_rate, estimate = .pred)
+xgb_mae  <- mae(xgb_results, truth = int_rate, estimate = .pred)
+xgb_rsq  <- rsq(xgb_results, truth = int_rate, estimate = .pred)
+xgb_mse  <- mean((xgb_results$int_rate - xgb_results$.pred)^2)
+
+# 4. Print Summary
+cat("XGBoost Final Test Metrics:\n")
+print(xgb_rmse)
+print(xgb_mae)
+print(paste("MSE:", xgb_mse))
+print(xgb_rsq)
+
+# 5. Visual Check: Predicted vs Actual
+ggplot(xgb_results, aes(x = int_rate, y = .pred)) +
+  geom_point(alpha = 0.1, color = "darkgreen") +
+  geom_abline(lty = 2, color = "red", size = 1) +
+  labs(
+    title = "XGBoost: Predicted vs. Actual Interest Rates",
+    subtitle = paste("RMSE:", round(xgb_rmse$.estimate, 3), "| R-Squared:", round(xgb_rsq$.estimate, 3)),
+    x = "Actual Interest Rate",
+    y = "Predicted Interest Rate"
+  ) +
+  theme_minimal() +
+  coord_fixed(ratio = 1)
+```
+
+### Performance Evaluation
+
+These results indicate that the model explains approximately 54% of the variance in interest rates on unseen data. The relatively small gap between RMSE and MAE suggests that prediction errors are not dominated by a small number of extreme outliers, but are instead moderately distributed across observations. Overall, the error magnitudes are consistent with the inherent noise and heterogeneity present in our data.
+
+Compared to the Random Forest baseline, the XGBoost model shows slightly improved predictive accuracy, particularly in terms of reduced bias at higher and lower interest rate levels. It is confirming the expected benefits of a boosting-based approach.
+
+The Predicted vs. Actual scatter plot for XGBoost shows a strong positive relationship between true and predicted interest rates, with the majority of observations aligned along the identity line. This confirms that the model successfully captures the dominant structure of interest rate determination across the full range of values.
+
+Compared to the Random Forest model, XGBoost exhibits less pronounced regression-to-the-mean behavior. While some underprediction at very high interest rates remains, the deviation from the identity line is reduced, indicating that the boosting model is better able to adapt to observations that were previously underfit. This aligns with the sequential error-correction mechanism of XGBoost, where later trees explicitly focus on difficult-to-predict cases.
+
+
+```{r}
+library(yardstick)
+library(dplyr)
+
+# 1. Predict on Training Data (Self-Check)
+train_metrics <- predict(xgb_fit, new_data = train) %>%
+  bind_cols(train) %>%
+  metrics(truth = int_rate, estimate = .pred) %>%
+  mutate(Data = "Training")
+
+# 2. Predict on Test Data (Reality Check)
+test_metrics <- predict(xgb_fit, new_data = test) %>%
+  bind_cols(test) %>%
+  metrics(truth = int_rate, estimate = .pred) %>%
+  mutate(Data = "Test")
+
+# 3. Combine and Compare
+overfitting_check <- bind_rows(train_metrics, test_metrics) %>%
+  filter(.metric == "rmse") %>%
+  select(Data, .metric, .estimate)
+
+print(overfitting_check)
+```
+
+The training and test RMSE values are very close, indicating good generalization performance and no evidence of substantial overfitting in the XGBoost model.
+
+
+
+
+```{r, dev='png', dpi=300, out.width="100%"}
+# Extract the underlying XGBoost model object
+xgb_model_obj <- extract_fit_parsnip(xgb_fit)
+
+# Plot top 15 features
+vip(xgb_model_obj, geom = "col", num_features = 15, aesthetics = list(fill = "steelblue")) +
+  labs(
+    title = "Feature Importance (XGBoost)",
+    subtitle = "Top 15 predictors by Gain",
+    y = "Importance (Gain)",
+    x = "Predictor"
+  ) +
+  theme_minimal()
+```
+
+The feature importance plot (based on Gain) highlights the predictors that contribute most to reducing the training loss across boosting iterations. The results indicate that loan term is by far the most influential variable. This is suggesting that the duration of the loan plays a central role in interest rate determination. This is economically intuitive, as longer loan terms typically means higher risk exposure and are therefore priced with higher interest rates.
+
+The second most important predictor, total revolving credit limit total_rev_hi_lim, reflects a borrower’s available credit capacity and overall creditworthiness. Its strong contribution indicates that lenders place significant weight on a borrower’s credit limits when pricing loans. Similarly, recent credit inquiries inq_last_6mths emerge as an important factor, consistent with the notion that frequent recent credit applications signal elevated risk.
+
+The variable purpose_credit_card appears among the more influential predictors in the XGBoost model. This is indicating that loans issued for credit card refinancing carry systematic information for interest rate determination beyond general borrower characteristics. Its importance suggests that, holding other financial variables constant, loans labeled as credit card refinancing tend to be priced differently from other loan purposes.
+
+
+```{r, dev='png', dpi=300, out.width="100%"}
+# Combine predictions and truth into a long format for plotting
+plot_data <- xgb_results %>%
+  pivot_longer(cols = c(int_rate, .pred), 
+               names_to = "Type", 
+               values_to = "Interest_Rate") %>%
+  mutate(Type = ifelse(Type == "int_rate", "Actual", "Predicted"))
+
+# Plot density curves
+ggplot(plot_data, aes(x = Interest_Rate, fill = Type)) +
+  geom_density(alpha = 0.4) +
+  scale_fill_manual(values = c("Actual" = "gray", "Predicted" = "darkgreen")) +
+  labs(
+    title = "Distribution Comparison: Actual vs. Predicted",
+    subtitle = "The model captures the center well but has narrower spread (lower variance)",
+    x = "Interest Rate (%)",
+    y = "Density" 
+  ) +
+  theme_minimal()
+```
+
+The distributional comparison shows that the model accurately captures the central mass of the interest rate distribution, with predicted values closely aligned to the actual density in the main range. However, the predicted distribution exhibits a noticeably narrower spread, indicating reduced variance. In particular, extreme high interest rates are underrepresented in the predictions. This behavior reflects a well-regularized model that prioritizes stable average performance and minimizes overall prediction error, at the cost of smoothing rare extreme outcomes. Such variance reduction is consistent with the observed regression-to-the-mean behavior and is typical for tree-based ensemble methods optimized for RMSE.
+
+```{r}
+# Save the trained workflow
+saveRDS(
+  xgb_fit,
+  file = "models/final_xgb_model.rds"
+)
+```
+
+
+## Cross-Validation
+
+We apply cross-validation to assess the stability and generalization of the XGBoost model across different data splits to ensure that the observed performance is not driven by a single train–test partition.
+
+```{r}
+library(tidymodels)
+library(dplyr)
+
+set.seed(123)
+
+train_val_combined <- bind_rows(train, val)
+cv_folds <- vfold_cv(train_val_combined, v = 5)
+
+xgb_cv <- fit_resamples(
+  final_xgb_workflow,
+  resamples = cv_folds,
+  metrics   = metric_set(rmse, mae, rsq),
+  control   = control_resamples(save_pred = TRUE)
+)
+
+assess_mse <- collect_predictions(xgb_cv) %>%
+  group_by(id) %>%
+  summarise(
+    val_mse = mean((int_rate - .pred)^2),
+    .groups = "drop"
+  )
+
+
+calc_train_mse <- function(wf, folds) {
+  purrr::map2_dfr(folds$splits, folds$id, \(split, fold_id) {
+    fit_obj <- fit(wf, data = analysis(split))
+    preds   <- predict(fit_obj, new_data = analysis(split)) %>% bind_cols(analysis(split) %>% select(int_rate))
+    tibble(
+      id = fold_id,
+      train_mse = mean((preds$int_rate - preds$.pred)^2)
+    )
+  })
+}
+
+train_mse <- calc_train_mse(final_xgb_workflow, cv_folds)
+
+xgb_stability <- left_join(train_mse, assess_mse, by = "id") %>%
+  mutate(
+    gap = val_mse - train_mse,
+    model = "XGBoost"
+  )
+
+xgb_stability %>%
+  summarise(
+    avg_train_mse = mean(train_mse),
+    avg_val_mse   = mean(val_mse),
+    avg_gap       = mean(gap)
+  )
+
+xgb_stability
+
+
+```
+
+```{r}
+final_fit <- fit(final_xgb_workflow, data = train_val_combined)
+
+test_preds <- predict(final_fit, new_data = test) %>%
+  bind_cols(test %>% select(int_rate))
+
+metrics(test_preds, truth = int_rate, estimate = .pred)
+
+```
+
+The cross-validation results show highly consistent training and validation errors across all folds. Training MSE varies only marginally between folds, and the validation MSE remains close to the training error, resulting in a small and stable generalization gap. This indicates that the XGBoost model generalizes well and does not exhibit substantial overfitting. Moreover, the close alignment between cross-validation and test-set performance suggests that the reported test results are representative and robust rather than split-dependent.
+
+
+# Conclusion
+The objective of this project was to model and predict LendingClub interest rates using borrower- and loan-level information, while systematically comparing models of increasing complexity. The analysis followed a structured workflow comprising exploratory data analysis, careful preprocessing, baseline modeling, and the application of advanced ensemble methods, accompanied by extensive diagnostic evaluation.
+
+A central takeaway of the project is that data preprocessing and diagnostic analysis are at least as important as the choice of model itself. The extensive cleaning, transformation, and encoding steps were crucial for ensuring that all models could be trained without leakage and evaluated fairly. Without this foundation, differences between the models would likely have reflected preprocessing artifacts rather than genuine modeling improvements.
+
+We started with a linear regression and it provided a transparent and interpretable baseline. While the linear model offered clear coefficient-based insights, diagnostic plots revealed systematic violations of linearity and homoscedasticity, especially at higher interest rates. These shortcomings indicated that interest rate formation is driven by complex, non-linear interactions that cannot be adequately captured by a purely linear specification.
+
+The Random Forest model represented a substantial improvement over the linear baseline. By relaxing parametric assumptions, it captured non-linear effects and interactions more effectively, resulting in markedly improved predictive performance and robustness. However, diagnostic analyses consistently showed regression-to-the-mean behavior, with extreme interest rates being systematically under- or overestimated. This limitation reflects the averaging nature of bagging-based ensembles, while Random Forests reduce variance and produce stable predictions, they tend to smooth rare and extreme outcomes.
+
+Building on these observations, XGBoost was introduced to address residual bias through sequential error correction. The XGBoost model achieved modest but consistent improvements in explanatory power and showed reduced bias at the upper end of the interest rate distribution. Cross-validation results demonstrated highly stable training and validation performance across folds, indicating that the model generalizes well and does not overfit. Nevertheless, even XGBoost produced conservative predictions with reduced variance and underrepresentation of extreme interest rates, highlighting that increased model flexibility cannot fully overcome intrinsic data noise and heterogeneity. With a test-set RMSE of 2.96, the XGBoost model predicts interest rates with an average error of roughly three percentage points, underscoring both its effectiveness and the intrinsic uncertainty in credit pricing.
+
+## Lessons Learned
+
+1. Preprocessing is as important as model choice
+Careful handling of missing values, categorical encoding, and feature transformations was critical to achieving stable model performance. Inconsistent or data-leaking preprocessing would likely have dominated model error more than the choice between Random Forest and XGBoost.
+2. Linear models are valuable diagnostics, not just baselines
+Although linear regression underperformed relative to the other two methods, it played a crucial role in revealing structural non-linearities and motivating more flexible models.
+3. Model diagnostics are essential beyond headline metrics
+While RMSE and R² provided useful aggregate summaries, diagnostic plots—such as predicted vs. actual comparisons and distributional overlays—were crucial for understanding systematic bias, variance behavior, and model limitations. Without these diagnostics, important weaknesses (e.g. underprediction of extreme interest rates) would have remained hidden.
+4. Boosting improves bias, but does not eliminate structural limitations
+XGBoost reduced some of the bias observed in the Random Forest, particularly at higher interest rates, but did not fully resolve the underrepresentation of extreme values. This shows that boosting improves upon bagging, but cannot overcome fundamental data constraints.
+5. Stability and generalization matter more than marginal gains
+The close alignment between training and test shows us that both models generalize well. Small performance improvements should be weighed against increased model complexity and sensitivity to hyperparameter choices.

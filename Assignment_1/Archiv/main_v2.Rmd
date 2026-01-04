@@ -384,7 +384,6 @@ The variable verification_status is treated as an ordered categorical feature be
 A data quality review was performed on the variables **earliest_cr_line** and **last_credit_pull_d** to ensure correct formatting and logical consistency. These variables describe the borrower’s credit history timeline and are relevant for credit risk modeling and feature engineering.
 
 ```{r}
-
 str(data[, c("earliest_cr_line", "last_credit_pull_d")])
 ```
 
@@ -420,7 +419,6 @@ data %>%
 Date fields must be correctly formatted and logically consistent to support downstream analysis. Incorrect or contradictory dates can lead to inaccurate derived features and unreliable modeling outcomes. In this context, it is expected that the earliest recorded credit line cannot occur after the most recent credit pull. Therefore, the relationship: **earliest_cr_line_date ≤ last_credit_pull_d_date** should hold for all valid observations.
 
 ```{r}
-
 logic_check <- data %>%
   mutate(
     row_id = row_number(),
@@ -473,7 +471,6 @@ logic_emp %>%
     inconsistencies_title_missing = sum(inconsistency_emp_missing_title, na.rm = TRUE),
     inconsistencies_length_missing = sum(inconsistency_missing_length, na.rm = TRUE)
   )
-
 ```
 
 The consistency check compares emp_title (free-text job title) with emp_length (standardized tenure). We find 6,314 observations where emp_length is provided but emp_title is missing, and 355 observations showing the opposite pattern. This indicates that missingness in these variables is not deterministic and likely driven by different reporting behaviors (non-disclosure, incomplete application fields, or data ingestion gaps). Because there is no defensible rule to reconstruct the missing field from the present one without introducing bias, we do not correct or drop observations based on this inconsistency. Instead, we treat this as a feature-quality consideration. emp_title is later removed due to high cardinality and limited interpretability for regression, while emp_length is retained as an ordered factor because it is low-dimensional and semantically meaningful.
@@ -1557,9 +1554,9 @@ knitr::kable(summary_dims, caption = "Dataset size before and after preprocessin
 Preprocessing reduces the dataset from 798,641 observations with 52 features to 734,825 observations with 20 features. The reduction in rows is primarily driven by the removal of joint loan applications and observations with insufficient or ambiguous categorical information, while the reduction in features reflects the exclusion of non-informative identifiers, semantically unavailable variables, and redundant or derived features.
 
 ```{r}
-write.csv(cleaned_data,
-          file = "cleaned_data.csv",
-          row.names = FALSE)
+#write.csv(cleaned_data,
+#          file = "cleaned_data.csv",
+#          row.names = FALSE)
 ```
 
 # Training
@@ -1574,170 +1571,15 @@ Interest rate prediction is approached as a supervised regression task. To ensur
 
 Model performance is evaluated using Root Mean Squared Error (RMSE) as the primary metric and Mean Absolute Error (MAE) as a complementary metric. RMSE penalizes large prediction errors more strongly and is therefore well suited for assessing overall predictive accuracy, while MAE provides an intuitive interpretation of the average absolute deviation between predicted and observed interest rates. These metrics are computed on a validation set and used for model comparison and selection.
 
-## Loading The preprocessed data
-
-The modeling phase begins by loading the cleaned dataset produced in the preprocessing stage. This dataset contains only application-time–available features and has already undergone extensive quality checks, feature reduction, and logical consistency validation. The file is read from disk to ensure a clean separation between preprocessing and training workflows.
-
-```{r}
-data <- read_csv("cleaned_data.csv")
-```
-
-### Order of levels
-
-Because CSV files do not preserve factor ordering, all ordered categorical variables must be explicitly redefined after loading the preprocessed dataset. Correct ordering is essential because several variables (e.g., employment length, verification status, delinquency severity) encode monotonic risk relationships. Restoring their ordinal structure ensures that downstream preprocessing steps and models correctly interpret relative category severity.
-
-```{r}
-categorical_cols <- names(data)[
-  sapply(data, function(x) is.factor(x) || is.character(x))
-]
-
-categorical_cols
-```
-
-```{r}
-num_categories <- sapply(
-  data[categorical_cols],
-  function(x) length(unique(na.omit(x)))
-)
-
-num_categories
-```
-
-#### emp_length
-
-```{r}
-# introduce order for emp_length
-data$emp_length <- factor(
-  data$emp_length,
-  levels = c(
-    "< 1 year",
-    "1 year",
-    "2 years",
-    "3 years",
-    "4 years",
-    "5 years",
-    "6 years",
-    "7 years",
-    "8 years",
-    "9 years",
-    "10+ years"
-  ),
-  ordered = TRUE
-)
-```
-
-```{r}
-levels(data$emp_length)
-is.ordered(data$emp_length)
-```
-
-#### verification_status
-
-```{r}
-data$verification_status <- factor(
-  data$verification_status,
-  levels = c(
-    "Not Verified",
-    "Source Verified",
-    "Verified"
-  ),
-  ordered = TRUE
-)
-```
-
-```{r}
-levels(data$verification_status)
-is.ordered(data$verification_status)
-```
-
-#### home_ownership
-
-```{r}
-data$home_ownership <- factor(
-  data$home_ownership,
-  levels = c("RENT", "MORTGAGE", "OWN"),
-  ordered = TRUE
-)
-```
-
-```{r}
-levels(data$home_ownership)
-is.ordered(data$home_ownership)
-```
-
-#### delinq_2yrs_cat
-
-```{r}
-data$delinq_2yrs_cat <- factor(
-  data$delinq_2yrs_cat,
-  levels = c("0", "1", "2", "3+"),
-  ordered = TRUE
-)
-```
-
-```{r}
-levels(data$delinq_2yrs_cat)
-is.ordered(data$delinq_2yrs_cat)
-```
-
-#### delinq_recency
-
-```{r}
-data$delinq_recency <- factor(
-  data$delinq_recency,
-  levels = c(
-    "0",
-    "1-6",
-    "7-12",
-    "13-24",
-    "24+",
-    "none"
-  ),
-  ordered = TRUE
-)
-```
-
-```{r}
-table(data$delinq_recency)
-is.ordered(data$delinq_recency)
-```
-
-#### major_derog_recency
-
-```{r}
-data$major_derog_recency <- factor(
-  data$major_derog_recency,
-  levels = c(
-    "0",
-    "1-6",
-    "7-12",
-    "13-24",
-    "25-48",
-    "49-84",
-    "none"
-  ),
-  ordered = TRUE
-)
-```
-
-```{r}
-table(data$major_derog_recency)
-is.ordered(data$major_derog_recency)
-```
-
-```{r}
-data_ordered <- data
-```
-
 ## Imputation of missing values
 
 Although extensive preprocessing was performed to resolve logical inconsistencies and remove unusable variables, some predictors still contain missing values. These remaining missing values represent either genuinely unknown information (e.g., employment length not reported) or structurally meaningful absence like no delinquency history. Imputation is therefore handled during model training rather than during preprocessing to avoid information leakage and to allow imputation parameters to be learned exclusively from the training data.
 
 ```{r}
 missing_summary <- data.frame(
-  column = names(data),
-  missing_count = sapply(data, function(x) sum(is.na(x))),
-  missing_pct = sapply(data, function(x) mean(is.na(x)) * 100)
+  column = names(cleaned_data),
+  missing_count = sapply(cleaned_data, function(x) sum(is.na(x))),
+  missing_pct = sapply(cleaned_data, function(x) mean(is.na(x)) * 100)
 ) %>%
   arrange(desc(missing_pct))
 
@@ -1751,6 +1593,10 @@ knitr::kable(
 The dataset is split into three mutually exclusive subsets: training, validation, and test. The training set is used to estimate model parameters and preprocessing statistics, the validation set is used for model comparison and tuning, and the test set is held out for final, unbiased evaluation.
 
 The split is performed before any imputation or transformation that learns from the data distribution. This ensures that no information from the validation or test sets leaks into the training process. A fixed random seed is used to guarantee reproducibility.
+
+```{r}
+data_ordered <- cleaned_data
+```
 
 ```{r}
 library(tidymodels)
@@ -1783,7 +1629,7 @@ val_rs <- rsample::manual_rset(
 )
 ```
 
-The dataset was split into three mutually exclusive subsets: - Training set: used to learn model parameters and preprocessing statistics - Validation set: used for model selection and tuning - Test set: held out for final, unbiased evaluation
+The dataset was split into three mutually exclusive subsets: - Training set: used to learn model parameters and preprocessing statistics - Validation set: used for hyperparametertuning and model comparison - Test set: held out for final, unbiased evaluation
 
 Splitting was performed before any imputation to prevent leakage.
 
@@ -2094,7 +1940,7 @@ Findings from C+R Plots: - Hidden Non-Linearity: Several predictors that appeare
 
 **Evaluation of Potential Mitigation Strategies** Based on these diagnostics, we evaluated strategies to improve model validity: - Feature Pruning: Removing variables with high VIF values addresses coefficient instability but does not resolve the structural curvature seen in the residuals. - Strict Linearity Screening: The most effective mitigation was the isolation of predictors that maintained a straight partial residual line—such as inq_last_6mths, term, and log_annual_inc. This screening ensures the linearity assumption is satisfied for the baseline model.
 
-### Final Refinement: The Strictly Linear Model
+#### Final Refinement: The Strictly Linear Model
 
 The insights gained from the Component+Residual (C+R) plots confirmed that the initial model's structural misalignment was driven by partial non-linearities and complex interactions among credit and wealth metrics. To establish a statistically valid baseline that adheres strictly to the fundamental assumptions of Ordinary Least Squares (OLS), a final model was estimated using only those predictors that demonstrated additive and monotonic relationships with the target variable.
 
@@ -2135,7 +1981,7 @@ The difference in explanatory power between the naive model (0.44) and this vali
 
 ## Random Forest
 
-While the strictly linear baseline successfully satisfied OLS assumptions—evidenced by the flat LOWESS line in the residual plots—it did so by discarding predictors with high explanatory power but complex revol_bal, tot_cur_bal). The resulting drop in Adjusted R2 (from 0.44 to 0.31) demonstrates that a linear framework is overly restrictive for this dataset. Furthermore, the persistent sharp boundary observed at the lower edge of the residual cloud (the "floor effect") confirms that even a valid linear model cannot respect the physical constraints of interest rate floors.
+While the strictly linear baseline successfully satisfied OLS assumptions—evidenced by the flat LOWESS line in the residual plots—it did so by discarding predictors with high explanatory power but complex characteristics (revol_bal, tot_cur_bal). The resulting drop in Adjusted R2 (from 0.44 to 0.31) demonstrates that a linear framework is overly restrictive for this dataset. Furthermore, the persistent sharp boundary observed at the lower edge of the residual cloud (the "floor effect") confirms that even a valid linear model cannot respect the physical constraints of interest rate floors.
 
 To bridge this information gap and reclaim the predictive signal lost during feature screening, we employ a Random Forest model. Random Forest is an ensemble learning method that constructs a multitude of decision trees during training and outputs the mean prediction of the individual trees.
 
@@ -2188,46 +2034,134 @@ rf_fit <- fit(final_rf_workflow, data = train)
 print(rf_fit)
 ```
 
-![](images/clipboard-3504984184.png)
+**Hyperparameter Justification**
 
-Hyperparameter Justification
-
-To optimize the Random Forest for generalization on unseen loan data, we tuned the following key hyperparameters. The selected values reflect specific characteristics of the LendingClub dataset:
+To optimize the Random Forest for generalization on unseen loan data, we tuned the following key hyperparameters. Using the train and validation-set we conducted an iterative approach to find the best hyperparameters for this modeltype. Older iterations can be found within the commit history on github. The selected values reflect specific characteristics of the LendingClub dataset:
 
 -   mtry = 14 (Variables per Split) We selected a significantly higher value 14, which allows the model to consider nearly 70% of the available predictors at every split. This high value suggests that the predictive signal for interest rates is diffuse rather than concentrated in one or two dominant features. By sampling more variables at each node, we ensure that the trees can consistently find the best available splitter, even when the strongest predictors (like term or dti) might not be in a smaller random sample. This configuration pushes the model closer to "Bagging" (Bootstrap Aggregating), prioritizing low bias.
-
 -   min_n = 34 (Minimum Node Size) The minimum node size was set to a relatively large value to regularize tree growth. Financial loan data is noisy and heterogeneous, and very small terminal nodes risk capturing idiosyncratic borrower behavior rather than stable population-level patterns. Enforcing a minimum of 34 observations per leaf node reduces variance and discourages overly complex tree structures, improving robustness on unseen data.
-
 -   trees = 500 (Ensemble Size) We selected 500 trees to ensure stable ensemble predictions. As the number of trees in a Random Forest increases, the variance of the aggregated prediction decreases and the ensemble converges toward a stable average. While individual trees are not fully independent, increasing the forest size empirically reduces prediction variability. In practice, performance improvements typically plateau after several hundred trees, making 500 a commonly used compromise between predictive stability and computational efficiency for large-scale datasets.
+
+### Stability testing (K-fold)
+
+While the Random Forest architecture addresses the bias limitations of the linear model, it introduces a new risk: overfitting. Decision tree ensembles are powerful "memorizers," capable of driving training error near zero if unchecked. Although we implemented min_n = 34 as a regularizer, we must empirically verify that the model is learning generalizable patterns rather than idiosyncrasies of the specific training split.
+
+To assess this, we conducted a stability analysis using 5-fold cross-validation. In this procedure, the combined training and validation data is shuffled and split five times. For each fold, we calculate:
+
+-   Training MSE: How well the model fits the data it has seen.
+-   Validation MSE: How well the model predicts held-out data.
+-   The Generalization Gap: The difference between the two (MSEval − MSEtrain).
+
+A large, varying gap would indicate high variance (instability), suggesting the model is brittle. A consistent gap indicates a stable model, even if the training error is significantly lower than validation error (a known characteristic of Bagging ensembles).
+
+```{r}
+set.seed(123)
+
+# 1. Combine Train and Val to use 85% of data for the CV process
+train_val_combined <- bind_rows(train, val)
+cv_folds <- vfold_cv(train_val_combined, v = 5)
+
+# 2. Get VALIDATION metrics (Assess on the hold-out part of the fold)
+rf_cv <- fit_resamples(
+  final_rf_workflow,
+  resamples = cv_folds,
+  metrics   = metric_set(rmse, mae, rsq),
+  control   = control_resamples(save_pred = TRUE)
+)
+
+# Extract Validation MSE
+assess_mse_rf <- collect_predictions(rf_cv) %>%
+  group_by(id) %>%
+  summarise(
+    val_mse = mean((int_rate - .pred)^2),
+    .groups = "drop"
+  )
+
+# 3. Get TRAINING metrics (Assess on the training part of the fold)
+# We need a custom function because fit_resamples doesn't return training error
+calc_train_mse_rf <- function(wf, folds) {
+  purrr::map2_dfr(folds$splits, folds$id, \(split, fold_id) {
+    
+    # Train on the analysis (training) part of the fold
+    fit_obj <- fit(wf, data = analysis(split))
+    
+    # Predict back on that SAME analysis data to get Training Error
+    preds   <- predict(fit_obj, new_data = analysis(split)) %>% 
+      bind_cols(analysis(split) %>% select(int_rate))
+    
+    tibble(
+      id = fold_id,
+      train_mse = mean((preds$int_rate - preds$.pred)^2)
+    )
+  })
+}
+
+# Run the manual training error calculation
+# (Note: This might take a minute as it trains the RF 5 more times)
+train_mse_rf <- calc_train_mse_rf(final_rf_workflow, cv_folds)
+
+# 4. Stability Analysis: Combine and Compare
+rf_stability <- left_join(train_mse_rf, assess_mse_rf, by = "id") %>%
+  mutate(
+    gap = val_mse - train_mse,
+    model = "Random Forest"
+  )
+
+# 5. Output Summary
+rf_summary <- rf_stability %>%
+  summarise(
+    avg_train_mse = mean(train_mse),
+    avg_val_mse   = mean(val_mse),
+    avg_gap       = mean(gap)
+  )
+
+print(rf_summary)
+print(rf_stability)
+```
+
+### ![](images/clipboard-813039928.png)
+
+The notable gap between training and validation error confirms that the model is, to some degree, overfitting the training data. This is expected behavior for Random Forests; even with regularization (`min_n = 34`), the underlying decision trees are high-variance learners that aggressively partition the feature space to minimize training error. The model essentially "knows" the training borrowers twice as well as it knows the unseen validation borrowers.
+
+Crucially, while the *gap* is large, the*variance* of that gap is extremely low. The Validation MSE does not fluctuate wildly; it remains stable around 9.37 regardless of how the data is split. This indicates that while the model fits the training data aggressively, it has learned robust, generalizable signals rather than noise. The model is predictably accurate on unseen data.
+
+The stability analysis confirms that the Random Forest is robust. The regularization settings successfully prevented the validation error from behaving erratically. We accept the generalization gap as a trade-off for the model's ability to capture non-linearities (like the "floor effect") that the linear model missed, knowing that its performance on new data will be consistent.
 
 ### Performance Evaluation
 
-We evaluate the final Random Forest model on the held-out test set to assess its generalization performance.
+We evaluate the final Random Forest model (trained on train and val) on the held-out test set to assess its generalization performance.
 
 ```{r eval = FALSE}
 library(yardstick)
+# Retrain on Train + Validation ---
+# Combine the data (85% of total)
+train_val_combined <- bind_rows(train, val)
 
-# 1. Generate predictions on the test set
-rf_predictions <- predict(rf_fit, new_data = test)
+# Fit the FINAL model on this combined set
+rf_fit_final <- fit(final_rf_workflow, data = train_val_combined)
 
-# 2. Combine with true values
+# --- EVALUATE ON TEST SET ---
+# Generate predictions on the test set using the fit
+rf_predictions <- predict(rf_fit_final, new_data = test)
+
+# Combine with true values
 rf_results <- bind_cols(rf_predictions, test) %>%
   select(.pred, int_rate)
 
-# 3. Calculate Metrics
+# Calculate Metrics
 rf_rmse <- rmse(rf_results, truth = int_rate, estimate = .pred)
 rf_mae  <- mae(rf_results, truth = int_rate, estimate = .pred)
 rf_mse  <- mean((rf_results$int_rate - rf_results$.pred)^2)
 rf_rsq  <- rsq(rf_results, truth = int_rate, estimate = .pred)
 
-# 4. Display Results
-cat("Random Forest Performance on Test Set:\n")
+# Display Results
+cat("Random Forest Performance on Test Set (Trained on Train+Val):\n")
 print(rf_rmse)
 print(rf_mae)
 print(paste("MSE:", rf_mse))
 print(rf_rsq)
 
-# 5. Visual Check: Predicted vs Observed
+# Visual Check
 ggplot(rf_results, aes(x = int_rate, y = .pred)) +
   geom_point(alpha = 0.1, color = "darkblue") +
   geom_abline(lty = 2, color = "red") +
@@ -2239,11 +2173,9 @@ ggplot(rf_results, aes(x = int_rate, y = .pred)) +
   theme_minimal()
 ```
 
-![](images/clipboard-998885890.png)
+![](images/clipboard-2144692438.png){width="648"}
 
-![](images/clipboard-2144692438.png)
-
-The Predicted vs. Actual scatter plot visualizes the model’s performance on the test set. The data points show a clear alignment with the red identity line (y = x), indicating that the Random Forest successfully captures the relationship between borrower characteristics and interest rates without the strong systematic curvature typically observed in linear models. A notable feature of the plot is the vertical banding structure. This arises because LendingClub interest rates are not fully continuous but are assigned in discrete loan sub-grades, resulting in clusters of observations at specific interest rate levels. At the extremes of the target distribution, the model exhibits mild regression-to-the-mean behavior: very low interest rates tend to be slightly over-predicted, while very high interest rates (above approximately 25%) are systematically under-predicted. This effect is a well-known characteristic of tree-based ensemble methods, which generate predictions by averaging over terminal nodes and therefore have limited ability to extrapolate beyond the boundaries of the observed training data. Additionally, the spread of predictions increases for higher interest rates, indicating greater uncertainty in this region. This heteroskedasticity reflects the higher variability and heterogeneity associated with riskier loan segments. Overall, the model demonstrates stable and well-calibrated performance across the majority of the interest rate range, with limitations that are consistent with the underlying modeling approach.
+The Predicted vs. Actual scatter plot visualizes the model’s performance on the test set, where it achieved an MSE of 9.35and an RMSE of 3.06. The data points show a clear alignment with the red identity line (y=x), indicating that the Random Forest successfully captures the relationship between borrower characteristics and interest rates without the strong systematic curvature typically observed in linear models. A notable feature of the plot is the vertical banding structure. This arises because LendingClub interest rates are not fully continuous but are assigned in discrete loan sub-grades, resulting in clusters of observations at specific interest rate levels. At the extremes of the target distribution, the model exhibits mild regression-to-the-mean behavior: very low interest rates tend to be slightly over-predicted, while very high interest rates (above approximately 25%) are systematically under-predicted. This effect is a well-known characteristic of tree-based ensemble methods, which generate predictions by averaging over terminal nodes and therefore have limited ability to extrapolate beyond the boundaries of the observed training data. Additionally, the spread of predictions increases for higher interest rates, indicating greater uncertainty in this region. This heteroskedasticity reflects the higher variability and heterogeneity associated with riskier loan segments. Overall, the model demonstrates stable and well-calibrated performance across the majority of the interest rate range, with limitations that are consistent with the underlying modeling approach.
 
 ## XGBoost
 
@@ -2296,135 +2228,11 @@ print(xgb_fit)
 
 -   min_n = 2 (Minimum Observations per Leaf) Allowing small terminal nodes improved the model’s ability to adapt to localized structure in the data, particularly in segments associated with higher interest rates. Although very small leaf sizes can increase overfitting risk, we observed that this was effectively controlled through other regularization mechanisms (limited depth, shrinkage, subsampling, and loss reduction). As a result, min_n = 2 preserved flexibility without leading to unstable predictions.
 
-```{r}
-library(yardstick)
+### Stability testing (K-fold)
 
-# 1. Generate predictions on Test Set
-xgb_predictions <- predict(xgb_fit, new_data = test)
+Similar to the Random Forest model, we conducted a stability analysis for the XGBoost model using 5-fold cross-validation. This procedure evaluates the model's ability to generalize by comparing training and validation Mean Squared Errors (MSE) across folds.
 
-# 2. Combine with Truth
-xgb_results <- bind_cols(xgb_predictions, test) %>%
-  select(.pred, int_rate)
-
-# 3. Calculate Metrics
-xgb_rmse <- rmse(xgb_results, truth = int_rate, estimate = .pred)
-xgb_mae  <- mae(xgb_results, truth = int_rate, estimate = .pred)
-xgb_rsq  <- rsq(xgb_results, truth = int_rate, estimate = .pred)
-xgb_mse  <- mean((xgb_results$int_rate - xgb_results$.pred)^2)
-
-# 4. Print Summary
-cat("XGBoost Final Test Metrics:\n")
-print(xgb_rmse)
-print(xgb_mae)
-print(paste("MSE:", xgb_mse))
-print(xgb_rsq)
-
-# 5. Visual Check: Predicted vs Actual
-ggplot(xgb_results, aes(x = int_rate, y = .pred)) +
-  geom_point(alpha = 0.1, color = "darkgreen") +
-  geom_abline(lty = 2, color = "red", size = 1) +
-  labs(
-    title = "XGBoost: Predicted vs. Actual Interest Rates",
-    subtitle = paste("RMSE:", round(xgb_rmse$.estimate, 3), "| R-Squared:", round(xgb_rsq$.estimate, 3)),
-    x = "Actual Interest Rate",
-    y = "Predicted Interest Rate"
-  ) +
-  theme_minimal() +
-  coord_fixed(ratio = 1)
-```
-
-### Performance Evaluation
-
-These results indicate that the model explains approximately 54% of the variance in interest rates on unseen data. The relatively small gap between RMSE and MAE suggests that prediction errors are not dominated by a small number of extreme outliers, but are instead moderately distributed across observations. Overall, the error magnitudes are consistent with the inherent noise and heterogeneity present in our data.
-
-Compared to the Random Forest baseline, the XGBoost model shows slightly improved predictive accuracy, particularly in terms of reduced bias at higher and lower interest rate levels. It is confirming the expected benefits of a boosting-based approach.
-
-The Predicted vs. Actual scatter plot for XGBoost shows a strong positive relationship between true and predicted interest rates, with the majority of observations aligned along the identity line. This confirms that the model successfully captures the dominant structure of interest rate determination across the full range of values.
-
-Compared to the Random Forest model, XGBoost exhibits less pronounced regression-to-the-mean behavior. While some underprediction at very high interest rates remains, the deviation from the identity line is reduced, indicating that the boosting model is better able to adapt to observations that were previously underfit. This aligns with the sequential error-correction mechanism of XGBoost, where later trees explicitly focus on difficult-to-predict cases.
-
-```{r}
-library(yardstick)
-library(dplyr)
-
-# 1. Predict on Training Data (Self-Check)
-train_metrics <- predict(xgb_fit, new_data = train) %>%
-  bind_cols(train) %>%
-  metrics(truth = int_rate, estimate = .pred) %>%
-  mutate(Data = "Training")
-
-# 2. Predict on Test Data (Reality Check)
-test_metrics <- predict(xgb_fit, new_data = test) %>%
-  bind_cols(test) %>%
-  metrics(truth = int_rate, estimate = .pred) %>%
-  mutate(Data = "Test")
-
-# 3. Combine and Compare
-overfitting_check <- bind_rows(train_metrics, test_metrics) %>%
-  filter(.metric == "rmse") %>%
-  select(Data, .metric, .estimate)
-
-print(overfitting_check)
-```
-
-The training and test RMSE values are very close, indicating good generalization performance and no evidence of substantial overfitting in the XGBoost model.
-
-```{r}
-# Extract the underlying XGBoost model object
-xgb_model_obj <- extract_fit_parsnip(xgb_fit)
-
-# Plot top 15 features
-vip(xgb_model_obj, geom = "col", num_features = 15, aesthetics = list(fill = "steelblue")) +
-  labs(
-    title = "Feature Importance (XGBoost)",
-    subtitle = "Top 15 predictors by Gain",
-    y = "Importance (Gain)",
-    x = "Predictor"
-  ) +
-  theme_minimal()
-```
-
-The feature importance plot (based on Gain) highlights the predictors that contribute most to reducing the training loss across boosting iterations. The results indicate that loan term is by far the most influential variable. This is suggesting that the duration of the loan plays a central role in interest rate determination. This is economically intuitive, as longer loan terms typically means higher risk exposure and are therefore priced with higher interest rates.
-
-The second most important predictor, total revolving credit limit total_rev_hi_lim, reflects a borrower’s available credit capacity and overall creditworthiness. Its strong contribution indicates that lenders place significant weight on a borrower’s credit limits when pricing loans. Similarly, recent credit inquiries inq_last_6mths emerge as an important factor, consistent with the notion that frequent recent credit applications signal elevated risk.
-
-The variable purpose_credit_card appears among the more influential predictors in the XGBoost model. This is indicating that loans issued for credit card refinancing carry systematic information for interest rate determination beyond general borrower characteristics. Its importance suggests that, holding other financial variables constant, loans labeled as credit card refinancing tend to be priced differently from other loan purposes.
-
-```{r}
-# Combine predictions and truth into a long format for plotting
-plot_data <- xgb_results %>%
-  pivot_longer(cols = c(int_rate, .pred), 
-               names_to = "Type", 
-               values_to = "Interest_Rate") %>%
-  mutate(Type = ifelse(Type == "int_rate", "Actual", "Predicted"))
-
-# Plot density curves
-ggplot(plot_data, aes(x = Interest_Rate, fill = Type)) +
-  geom_density(alpha = 0.4) +
-  scale_fill_manual(values = c("Actual" = "gray", "Predicted" = "darkgreen")) +
-  labs(
-    title = "Distribution Comparison: Actual vs. Predicted",
-    subtitle = "The model captures the center well but has narrower spread (lower variance)",
-    x = "Interest Rate (%)",
-    y = "Density" 
-  ) +
-  theme_minimal()
-```
-
-The distributional comparison shows that the model accurately captures the central mass of the interest rate distribution, with predicted values closely aligned to the actual density in the main range. However, the predicted distribution exhibits a noticeably narrower spread, indicating reduced variance. In particular, extreme high interest rates are underrepresented in the predictions. This behavior reflects a well-regularized model that prioritizes stable average performance and minimizes overall prediction error, at the cost of smoothing rare extreme outcomes. Such variance reduction is consistent with the observed regression-to-the-mean behavior and is typical for tree-based ensemble methods optimized for RMSE.
-
-```{r}
-# Save the trained workflow
-saveRDS(
-  xgb_fit,
-  file = "final_xgb_model.rds")
-```
-
-## Cross-Validation
-
-We apply cross-validation to assess the stability and generalization of the XGBoost model across different data splits to ensure that the observed performance is not driven by a single train–test partition.
-
-```{r}
+```{r eval = FALSE}
 library(tidymodels)
 library(dplyr)
 
@@ -2475,35 +2283,192 @@ xgb_stability %>%
   )
 
 xgb_stability
-
-
 ```
+
+### ![](images/clipboard-1524520572.png){width="663"}
+
+Compared to the previous Random Forest model, which exhibited a much larger generalization gap (averaging approximately 4.34), the XGBoost model demonstrates superior stability. While the Random Forest showed significantly lower training error (\~5.03) compared to its validation error (\~9.37), it indicated a much higher degree of "memorization" or overfitting.
+
+In contrast, the XGBoost model's narrow gap suggests that its learning process is highly efficient at capturing generalizable patterns that exist consistently across the entire dataset. The fact that the Validation MSE remains consistently below 9.0 across all folds indicates that the boosting iterations and regularization parameters (such as learn_rate = 0.06 and loss_reduction = 0.05) have successfully managed the bias-variance tradeoff. This stability provides high confidence that the model will perform reliably when deployed on entirely new, unseen loan applications.
+
+### Performance Evaluation
+
+To assess the predictive capability of the final XGBoost model, we retrained the workflow on the combined Training and Validation sets (85% of the total data) and evaluated its performance against the held-out Test set.
 
 ```{r}
-final_fit <- fit(final_xgb_workflow, data = train_val_combined)
+library(yardstick)
 
-test_preds <- predict(final_fit, new_data = test) %>%
-  bind_cols(test %>% select(int_rate))
+# --- CRITICAL STEP: Retrain on Train + Validation ---
+# Combine the data
+train_val_combined <- bind_rows(train, val)
 
-metrics(test_preds, truth = int_rate, estimate = .pred)
+# Fit the FINAL model on this combined set
+xgb_fit_final <- fit(final_xgb_workflow, data = train_val_combined)
 
+# --- EVALUATION ON TEST SET ---
+# Generate predictions using the NEW fit (xgb_fit_final)
+xgb_predictions <- predict(xgb_fit_final, new_data = test)
+
+# Combine with Truth
+xgb_results <- bind_cols(xgb_predictions, test) %>%
+  select(.pred, int_rate)
+
+# Calculate Metrics
+xgb_rmse <- rmse(xgb_results, truth = int_rate, estimate = .pred)
+xgb_mae  <- mae(xgb_results, truth = int_rate, estimate = .pred)
+xgb_rsq  <- rsq(xgb_results, truth = int_rate, estimate = .pred)
+xgb_mse  <- mean((xgb_results$int_rate - xgb_results$.pred)^2)
+
+# Print Summary
+cat("XGBoost Final Test Metrics (Trained on Train + Val):\n")
+print(xgb_rmse)
+print(xgb_mae)
+print(paste("MSE:", xgb_mse))
+print(xgb_rsq)
+
+# Visual Check
+ggplot(xgb_results, aes(x = int_rate, y = .pred)) +
+  geom_point(alpha = 0.1, color = "darkgreen") +
+  geom_abline(lty = 2, color = "red", size = 1) +
+  labs(
+    title = "XGBoost: Predicted vs. Actual Interest Rates",
+    subtitle = paste("RMSE:", round(xgb_rmse$.estimate, 3), "| R-Squared:", round(xgb_rsq$.estimate, 3)),
+    x = "Actual Interest Rate",
+    y = "Predicted Interest Rate"
+  ) +
+  theme_minimal() +
+  coord_fixed(ratio = 1)
 ```
 
-The cross-validation results show highly consistent training and validation errors across all folds. Training MSE varies only marginally between folds, and the validation MSE remains close to the training error, resulting in a small and stable generalization gap. This indicates that the XGBoost model generalizes well and does not exhibit substantial overfitting. Moreover, the close alignment between cross-validation and test-set performance suggests that the reported test results are representative and robust rather than split-dependent.
+The model achieved an MSE of 8.80 and an RMSE of 2.967 on the test set. These results indicate that the model explains approximately 54.4% of the variance in interest rates on unseen data (R2=0.544). The relatively small gap between the RMSE (2.967) and MAE suggests that prediction errors are not dominated by extreme outliers but are instead moderately distributed across observations.
+
+Compared to the Random Forest baseline (Test MSE: 9.35, RMSE: 3.06), the XGBoost model shows improved predictive accuracy, confirming the expected benefits of its boosting-based approach.
+
+The Predicted vs. Actual scatter plot for XGBoost shows a strong positive relationship, with the majority of observations aligned along the identity line (y=x). This confirms that the model successfully captures the dominant structure of interest rate determination across the full range of values.
+
+Notably, XGBoost exhibits less pronounced regression-to-the-mean behavior than the Random Forest model. While some underprediction at very high interest rates remains, the deviation from the identity line is reduced. This indicates that the boosting model is better able to adapt to difficult cases that were previously underfit, aligning with its sequential error-correction mechanism where subsequent trees focus explicitly on earlier residual errors.
+
+```{r}
+library(yardstick)
+library(dplyr)
+
+# Predict on (Train and val) Training Data
+train_metrics <- predict(xgb_fit_final, new_data = train_val_combined) %>%
+  bind_cols(train_val_combined) %>%
+  metrics(truth = int_rate, estimate = .pred) %>%
+  mutate(Data = "Training (Train + Val)")
+
+# Predict on Test Data (Reality Check)
+test_metrics <- predict(xgb_fit_final, new_data = test) %>%
+  bind_cols(test) %>%
+  metrics(truth = int_rate, estimate = .pred) %>%
+  mutate(Data = "Test")
+
+# Combine and Compare
+overfitting_check <- bind_rows(train_metrics, test_metrics) %>%
+  filter(.metric == "rmse") %>%
+  select(Data, .metric, .estimate)
+
+print(overfitting_check)
+```
+
+A final comparison between training and test performance confirms the model's superior stability and generalization:
+
+-   Training (Train + Val) RMSE: 2.936
+
+-   Test RMSE: 2.967
+
+While the Random Forest showed a massive Generalization Gap of approximately 4.34 in MSE, the XGBoost model maintains a minimal difference between training and test metrics. This narrow gap confirms that the model has not overfitted the training data and maintains consistent predictive power on entirely new observations.
+
+```{r}
+# Extract the underlying model from the FINAL fit
+xgb_model_obj <- extract_fit_parsnip(xgb_fit_final)
+
+# Plot top 15 features
+vip(xgb_model_obj, geom = "col", num_features = 15, aesthetics = list(fill = "steelblue")) +
+  labs(
+    title = "Feature Importance (XGBoost)",
+    subtitle = "Top 15 predictors by Gain (Final Model)",
+    y = "Importance (Gain)",
+    x = "Predictor"
+  ) +
+  theme_minimal()
+```
+
+The feature importance plot (based on Gain) highlights the predictors that contribute most to reducing the training loss across boosting iterations. The results indicate that loan term is by far the most influential variable, with a Gain exceeding 0.31. This suggests that the duration of the loan plays a central role in interest rate determination. This is economically intuitive, as longer loan terms typically represent higher risk exposure and are therefore priced with higher interest rates.
+
+The second most important predictor, total revolving credit limit (total_rev_hi_lim), reflects a borrower’s available credit capacity and overall creditworthiness. Its significant contribution indicates that lenders place substantial weight on a borrower’s credit limits when pricing loans. Similarly, recent credit inquiries (inq_last_6mths) emerge as a top factor, consistent with the notion that frequent recent credit applications signal elevated risk. Interestingly, purpose_credit_cardappears among the most influential predictors, indicating that loans issued for credit card refinancing carry systematic pricing information that is distinct from other loan purposes, even when holding other financial variables constant.
+
+```{r}
+# Combine predictions and truth into a long format for plotting
+plot_data <- xgb_results %>%
+  pivot_longer(cols = c(int_rate, .pred), 
+               names_to = "Type", 
+               values_to = "Interest_Rate") %>%
+  mutate(Type = ifelse(Type == "int_rate", "Actual", "Predicted"))
+
+# Plot density curves
+ggplot(plot_data, aes(x = Interest_Rate, fill = Type)) +
+  geom_density(alpha = 0.4) +
+  scale_fill_manual(values = c("Actual" = "gray", "Predicted" = "darkgreen")) +
+  labs(
+    title = "Distribution Comparison: Actual vs. Predicted",
+    subtitle = "The model captures the center well but has narrower spread (lower variance)",
+    x = "Interest Rate (%)",
+    y = "Density" 
+  ) +
+  theme_minimal()
+```
+
+The distributional comparison shows that the model accurately captures the central mass of the interest rate distribution, with predicted values closely aligned to the actual density in the **10% to 20%** range. However, as noted in the plot subtitle, the predicted distribution exhibits a noticeably narrower spread, indicating reduced variance.
+
+In particular, the "Actual" distribution (gray) shows a secondary peak near the lower bound and a longer tail at the high end which the "Predicted" distribution (green) smooths over. Extreme high interest rates (above 25%) are underrepresented in the predictions. This behavior reflects a well-regularized model that prioritizes stable average performance and minimizes overall prediction error (MSE), at the cost of smoothing rare extreme outcomes. Such variance reduction is consistent with the observed regression-to-the-mean behavior and is typical for tree-based ensemble methods optimized for RMSE.
 
 # Conclusion
 
 The objective of this project was to model and predict LendingClub interest rates using borrower and loan-level information, systematically comparing models of increasing complexity. The analysis followed a structured workflow comprising exploratory data analysis, rigorous preprocessing, baseline modeling, and the application of advanced ensemble methods, all underpinned by extensive diagnostic evaluation. While this report presents the final, refined modeling path, the project involved a highly iterative development process. Numerous alternative specifications, feature engineering trials, and experimental approaches were tested, the full evolution of which can be traced through the project's GitHub commit history.
 
-A central takeaway from this iterative process is that data preprocessing and diagnostic analysis proved to be as critical as the choice of model itself. The extensive cleaning, transformation, and consistent encoding steps were the foundation that allowed for fair evaluation and prevented data leakage. Without this rigor, performance differences would likely have reflected preprocessing artifacts rather than genuine modeling gains.
+A central takeaway from this iterative process is that data preprocessing and diagnostic analysis proved to be as critical as the choice of model itself. The extensive cleaning, transformation, and consistent encoding steps were the foundation that allowed for fair evaluation and prevented data leakage. In particular, the automated cleaning pipeline ensures that median imputation values and categorical levels computed during training are saved within the recipe object. This is essential for reproducibility, as unseen data—which may consist of a single row—cannot provide its own median or mode for imputation; instead, it must be transformed using the exact parameters derived from the training distribution.
 
 This diagnostic rigor was most evident in the linear regression phase, which served a dual purpose beyond establishing a transparent baseline. The initial naive full-specification model proved invaluable for diagnostics, as its residuals revealed systematic violations of linearity, specifically U-shaped curves in wealth metrics and a distinct floor effect. These findings confirmed that the underlying mechanism of interest rate formation is structurally non-linear. Subsequently, the strictly linear baseline, screened to satisfy OLS assumptions, resulted in a valid but underpowered model with an Adjusted R-squared of 0.31. This quantified the information gap, representing the precise amount of predictive signal lost when forcing complex financial data into a purely additive framework.
 
 The Random Forest model represented a substantial improvement, successfully bridging the information gap identified in the linear phase. By relaxing parametric assumptions, it reclaimed the non-linear signals, such as revolving balance dynamics, that the linear model was forced to discard. While this resulted in markedly improved robustness, diagnostic analyses showed characteristic regression-to-the-mean behavior. The bagging approach reduced variance effectively but tended to smooth over rare and extreme outcomes, leading to under-prediction of the highest interest rates.
 
-Building on these observations, XGBoost was employed to address residual bias through sequential error correction. The model achieved modest but consistent improvements in explanatory power and successfully reduced bias at the upper end of the interest rate distribution. Cross-validation results demonstrated highly stable training and validation performance across folds, indicating excellent generalization. Nevertheless, even XGBoost produced conservative predictions with reduced variance at the extremes, suggesting that increased model flexibility cannot fully overcome intrinsic data noise.
+Building on these observations, XGBoost was employed to address residual bias through sequential error correction. The model achieved modest but consistent improvements in explanatory power and successfully reduced bias at the upper end of the interest rate distribution. Cross-validation results demonstrated highly stable training and validation performance across folds, indicating excellent generalization. To finalize the pipeline, the champion XGBoost model was fit on the full combined dataset. This approach maximized the information available for learning and reduced variance in the final estimator before it was applied to the unseen test data.
 
 With a test-set RMSE of 2.96, the final model predicts interest rates with an average error of roughly three percentage points. The persistence of conservative predictions at the extremes highlights that the remaining error is likely driven by unobserved variables, such as exact FICO scores, rather than model deficiency. Ultimately, the project confirms that while ensemble methods are superior for capturing the complex, interactive nature of credit risk, they are limited by the informational ceilings inherent in the dataset.
+
+```{r}
+# Combine the datasets currently in memory
+full_data_memory <- bind_rows(train, val, test)
+message("Combined dataset dimensions: ", paste(dim(full_data_memory), collapse = " x "))
+
+# Define the Model Specification (Your winning config)
+final_xgb_spec <- boost_tree(
+  trees          = 500,
+  tree_depth     = 5,
+  min_n          = 2,
+  loss_reduction = 0.05,
+  sample_size    = 0.43,
+  mtry           = 32,
+  learn_rate     = 0.06
+) %>%
+  set_engine("xgboost", tree_method = "hist") %>%
+  set_mode("regression")
+
+# Create the Workflow
+final_workflow <- workflow() %>%
+  add_recipe(rec) %>%
+  add_model(final_xgb_spec)
+
+# Fit on the FULL combined data
+message("Fitting final model on Train + Val + Test...")
+final_production_fit <- fit(final_workflow, data = full_data_memory)
+
+# Save the final model
+saveRDS(final_production_fit, "final_xgb_model_FULL.rds")
+message("Success! Final production model saved.")
+```
 
 ## Lessons Learned & Critical reflection
 

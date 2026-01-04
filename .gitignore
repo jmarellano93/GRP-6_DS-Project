@@ -4,7 +4,6 @@
 .RData
 .Ruserdata
 *.Rout
-*.rds
 # Data (large files)
 DS-Project_data/
 Full_dataset/

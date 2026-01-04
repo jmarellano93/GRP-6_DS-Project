@@ -11,14 +11,32 @@ REPOSITORY STRUCTURE
 ------------------------------------------------------------------------------
 The assignments are organized into separate folders:
 
-* Assignment_1/: Contains deliverables for the first assignment.
-* Assignment_2/: Contains the final project, including data, scripts, and 
-  documentation for the Neural Network classification task.
+The assignments are organized into separate folders:
+* **Assignment_1/**: Contains deliverables for the first assignment (XGBoost Gradient Boosting).
+* **Assignment_2/**: Contains the final project (Neural Network Multi-Class Classification).
 
 ------------------------------------------------------------------------------
 ASSIGNMENT 1: PROJECT OVERVIEW
 ------------------------------------------------------------------------------
+The first phase of the project involved the development of a predictive model focusing on **Gradient Boosting (XGBoost)**. This assignment served as the foundation for our data handling pipeline, where we established initial protocols for data cleaning, handling missing values, and exploratory analysis. 
 
+1. Documentation & Data
+  * Final Report: "Assignment_1/Assignment_1_Documentation.pdf"
+    This is the primary deliverable containin ghte full report, methodology, and code.
+  * Main Script: "Assignment_1/main.Rmd"
+    Note: The main executable script is provided as an R Markdown file (.rmd) 
+    rather than a standard .R file. This file matches the content of the 
+    PDF deliverable exactly.
+
+2. Data & Models
+    * Preprocessed Data: "Assignment_1/cleaned_data.csv"
+      This is the final version of the historic data used for training. Imputation is done after using the recipe.
+      
+    * Champion Model: "final_xgb_model_FULL.rds`
+
+3. How to Run:**
+    *Script: "Executable_secret_data.r"
+    * Use this script to validate the model. It is designed to load the pre-trained `.rds` model and generate predictions on new/secret datasets. Please ensure that the file-path to your secret_data is correct.
 ------------------------------------------------------------------------------
 ASSIGNMENT 2: PROJECT OVERVIEW
 ------------------------------------------------------------------------------
